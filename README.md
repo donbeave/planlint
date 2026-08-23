@@ -26,15 +26,14 @@ yet claim to implement the compiler.
 
 ## Documentation
 
-- [Research archive](docs/research.md) — complete design proposal and source links.
-- [Research review](docs/research-review.md) — checked claims, corrections, and open verification items.
-- [Goal-execution research](docs/goal-execution.md) — source-level comparison of
-  Codex, Claude Code, OpenHands, Rig, Cline, and Grok.
-- [Rig agent CLI adapters](docs/rig-agent-cli.md) — how to drive real coding-agent
-  CLIs, ACP agents, and HTTP sessions from a Rig host.
-- [Linear backend research](docs/linear-research.md) — Linear capability map,
-  Git/Linear storage comparison, sync ownership, and the recommended hybrid
-  architecture.
+Use the [documentation home](docs/README.md). It routes the material by
+question into three layers:
+
+- [Design](docs/design/README.md) — current product synthesis and delivery path.
+- [Research](docs/research/README.md) — checked evidence, comparisons, and
+  qualifications.
+- [Integrations](docs/integrations/README.md) — Linear and Rig CLI adapter
+  studies.
 
 ## License
 
