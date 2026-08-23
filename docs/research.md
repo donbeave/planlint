@@ -145,6 +145,26 @@ satisfied. Its evaluator does not independently run commands or inspect files;
 it evaluates what was surfaced in the transcript. Claude Code also distinguishes
 `/goal` from a Stop hook: a Stop hook can run a deterministic script.
 
+**Planning and decomposition:** `/goal` does not create a separate plan or DAG.
+The condition itself is the directive, and the normal Claude session decides
+what tools and intermediate steps to use. A user can prepare a plan in a file,
+but the documented goal mechanism does not freeze or validate that plan.
+
+**Verification, scope, and approval:** the condition must name a measurable
+result and the command/output that demonstrates it, because the evaluator cannot
+read files or run commands. Manual permission mode still prompts for tool
+approval on each goal turn; auto mode only changes permission behavior, not the
+goal’s completion semantics. The documented goal path has no changed-path
+allowlist or independent scope proof. A user can clear the goal or interrupt
+the session; authentication, exhausted credits, unrepairable context overflow,
+and unavailable-model errors clear it automatically.
+
+**Context and isolation:** turns remain in the same session and resume restores
+the condition, while the turn count, timer, and token baseline reset. `/goal`
+does not create a clean worktree or fresh execution context. Background work
+defers evaluation until its result is surfaced, so a controller should avoid
+using hidden background tasks as acceptance evidence.
+
 ```text
 Claude /goal evaluator = keeps trying
 Rust verifier          = decides whether work passed
@@ -182,6 +202,22 @@ ordinary verifier failure         → decision: block with compact diagnostics
 `stop_hook_active` must cap consecutive automatic retries. The compiler, not
 the hook, owns that retry policy and final state.
 
+**Planning and decomposition:** Codex documents `/plan` as a separate mode and
+recommends pointing a goal at the files, docs, issue, logs, or plan it must read
+first, then working in checkpoints. Native goal state does not itself expose a
+task DAG or require plan approval. The TUI’s normal permission and goal
+replacement surfaces are the human control points: replacing an unfinished
+goal prompts for confirmation, while pause/resume/clear and budget controls
+remain user/system operations.
+
+**Verification and scope:** native `/goal` records an objective and lifecycle
+state, not a proof receipt. A repository must attach `planlint verify` (or an
+equivalent command) through a Stop hook or explicit tool workflow. The hook must
+check changed paths, acceptance evidence, and non-vacuous test/compiler/linter
+output before it allows a terminal PASS. Do not use `codex exec "/goal ..."`
+as a control-plane substitute for the TUI/native goal path; the inspected
+maintainer discussion reports that `exec` treats it as ordinary text.
+
 ### Grok
 
 Current Grok documentation supports Markdown skills exposed as slash commands,
@@ -200,6 +236,22 @@ stops on `PLAN PASS` or a terminal `PLAN_GAP`, `BLOCKED`, `STALE`, or `FAIL`.
 The core remains host-neutral. Claude, Codex, and Grok adapters translate the
 same verifier verdict into each host’s continuation protocol, but Grok cannot
 reuse the Claude/Codex Stop-hook continuation mechanism.
+
+**Planning and approval:** Grok’s documented `/plan` mode explores the codebase,
+writes a plan preview, and requires explicit approval or requested changes
+before normal edit tools proceed. This is a real planner/approval surface, but
+it is separate from any `/goal` abstraction. Plan mode gates edit tools, not
+shell redirection, so the controller must also enforce command policy and
+scope. Permission modes (`Ask`, `Auto`, and `Always-approve`) remain separate
+from plan approval.
+
+**Execution and verification:** implement `/goal` as a skill only for the user
+interface. Store the accepted plan and run state outside the model, start Grok
+with `-p --session-id` or ACP, and let the controller issue a new prompt on
+`--resume`/ACP when deterministic verification fails. Use `PreToolUse` to deny
+undeclared paths or dangerous commands; use `Stop` for logging and receipts
+only, because its output cannot continue the loop. Require an external
+`PASS`, `PLAN_GAP`, `BLOCKED`, `STALE`, or `FAIL` state before ending the run.
 
 ## Source-level implementation traces
 
@@ -333,6 +385,12 @@ still asks the judge to inspect transcript evidence rather than independently
 run the repository’s commands. A deterministic verifier should therefore sit
 under or beside this loop.
 
+**Planning and approval:** there is no separate planner or human approval
+surface in the shown `run_goal` function. The agent LLM plans implicitly inside
+the conversation; the judge supplies corrective next-step feedback. If a
+human-approved plan is required, it must be established before calling
+`run_goal` and persisted independently of the conversation.
+
 **Unknown.** The public example does not define an allowed-path policy,
 transactional workspace, approval gate, or judge tool permissions. Those may be
 provided by the surrounding SDK/runtime, but they are not part of the shown
@@ -374,6 +432,12 @@ portable Markdown objective, acceptance contract, changed-path guard, or
 independent deterministic verifier. SWE-bench evaluation supplies external
 task validation rather than the goal command itself.
 
+**Planning and approval:** the inspected retry path receives a problem
+statement/configuration, not a user-approved plan or explicit decomposition
+graph. Reviewer/retry configuration chooses whether to make another attempt;
+the source path exposes no human approval gate. This makes its hard-reset and
+budget controls reusable, but not its task-contract semantics.
+
 ### Deterministic contract/harness references
 
 These are not host agents, but they expose the pieces missing from the native
@@ -390,6 +454,8 @@ Its scope guard compares declared paths with the actual Git worktree in
 The repository documents dependency waves and worker handoff validation, but
 worker `isolation` is advisory; it does not automatically create worktrees or
 sandboxes. This is a stateful execution harness, not an LLM planner.
+The documented workflow treats plan approval as an external human step before
+execution; the harness then owns evidence-backed completion.
 
 **agent-spec — confirmed.** The Rust project compiles Markdown Task Contracts
 into lifecycle checks. `quality_gate` rejects lint errors or insufficient
@@ -400,7 +466,8 @@ The project’s documentation binds scenarios to named tests, enforces
 allowed/forbidden changed paths, and supports a caller AI verifier whose
 uncertain decisions are written as explicit requests and decisions rather than
 treated as automatic PASS. This is a contract compiler/verifier, not a
-persistent goal controller.
+persistent goal controller. Its documented acceptance surface separates human
+review of the contract from machine review of verification results.
 
 ### Closed-source boundary: Claude Code and Grok
 
@@ -1371,6 +1438,61 @@ This is a credible path toward making agent execution behave less like “ask an
 LLM to implement the plan” and more like **compile an accepted contract,
 iterate on diagnostics, and accept only a proven result**.
 
+### Concrete host recommendations
+
+Use one host-neutral contract for every adapter:
+
+```text
+objective        one bounded vertical slice
+inputs           explicit files, symbols, docs, and accepted fingerprints
+may_change      closed-world path set
+must_not        forbidden paths, APIs, dependencies, and behavior
+acceptance       named commands plus structured evidence predicates
+retry_budget     maximum corrective passes and total tool/turn budget
+stop             PASS | PLAN_GAP | BLOCKED | STALE | FAIL
+```
+
+The host’s goal feature may keep the model working, but it must not be the
+authority for PASS. The controller/verifier owns receipts, scope checks, retry
+limits, and terminal status.
+
+**Claude Code**
+
+- Use `/goal` only as the session continuation wrapper. Put one measurable
+  end-state, the exact commands that prove it, forbidden changes, and a turn or
+  time bound in the condition.
+- Run `planlint verify` from a command Stop hook. The hook must inspect the
+  actual Git diff and structured test/compiler/linter evidence; surface its
+  compact diagnostic in the transcript so Claude’s evaluator can act on it.
+- Accept the plan and permissions before enabling unattended turns. Keep one
+  plan per session; do not rely on the evaluator to discover missing files or
+  unauthorized changes.
+
+**Codex**
+
+- Use native `/goal` for durable thread state and `/plan` for decomposition or
+  architecture review. Put detailed contract content in a file when it exceeds
+  the goal field; use the documented TUI goal path rather than assuming
+  `codex exec` parses slash commands.
+- Attach a Stop hook that runs the deterministic verifier and returns compact
+  continuation diagnostics only for correctable failures. Let the verifier,
+  not the model’s `update_goal Complete`, authorize PASS.
+- Keep normal tool permissions and goal replacement confirmation enabled. Treat
+  pause/resume/clear and token/turn budgets as controller state, not model
+  suggestions.
+
+**Grok**
+
+- Use `/plan` for the documented plan preview and human approval, then expose a
+  `/goal` skill that creates an external run record. The skill itself must not
+  pretend to provide persistence.
+- Drive execution through headless sessions or ACP. After each completed
+  response, run the verifier outside Grok; resume only when the result is a
+  bounded corrective diagnostic. Use `PreToolUse` to deny scope violations and
+  dangerous commands; never depend on `Stop` stdout for continuation.
+- Prefer a worktree/sandbox per run, retain the plan fingerprint and evidence
+  receipts outside the session, and stop on the first terminal verifier state.
+
 ## Source links
 
 - [CodePlan — Microsoft Research](https://www.microsoft.com/en-us/research/publication/codeplan-repository-level-coding-using-llms-and-planning-2/)
@@ -1386,6 +1508,8 @@ iterate on diagnostics, and accept only a proven result**.
 - [Grok skills, plugins, and marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)
 - [Grok hooks](https://docs.x.ai/build/features/hooks)
 - [Grok headless and scripting](https://docs.x.ai/build/cli/headless-scripting)
+- [Grok plan mode](https://docs.x.ai/build/features/plan-mode)
+- [Grok permissions](https://docs.x.ai/build/features/permissions)
 - [Grok 4.6](https://docs.x.ai/developers/grok-4-6)
 - [OpenAI model catalog](https://developers.openai.com/api/docs/models)
 - [The Working Set of a Coding Agent](https://arxiv.org/abs/2608.16630)

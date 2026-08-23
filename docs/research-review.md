@@ -48,6 +48,12 @@ The original conclusion still holds, with two material corrections:
   commands, lifecycle hooks, Claude Code compatibility, headless sessions, and
   ACP. It does not document a built-in `/goal` equivalent. Its `Stop` event is
   passive, so automatic continuation requires an outer headless/ACP controller.
+  Its separate `/plan` mode provides a plan preview and explicit approval
+  surface, while permission modes and hooks remain separate controls.
+- **Claude Code context:** current goal documentation says the condition is
+  restored on resume but turn/time/token baselines reset; `/goal` continues the
+  same session rather than creating a fresh execution context. Background work
+  defers evaluation until its output is surfaced.
 - **Markdown precedent:** GitHub Spec Kit documents separate specification,
   plan, and task artifacts; OpenSpec documents plain-Markdown requirements,
   scenarios, design, and tasks.
@@ -116,20 +122,22 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 11. [Grok skills, plugins, and marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)
 12. [Grok hooks](https://docs.x.ai/build/features/hooks)
 13. [Grok headless and scripting](https://docs.x.ai/build/cli/headless-scripting)
-14. [Grok 4.6](https://docs.x.ai/developers/grok-4-6)
-15. [agent-spec documentation](https://docs.rs/crate/agent-spec/latest)
-16. [agent-spec repository](https://github.com/ZhangHanDong/agent-spec)
-17. [Agent Execution Harness](https://github.com/lordaeternus/agent-execution-harness)
-18. [comrak documentation](https://docs.rs/comrak/latest/comrak/)
-19. [Codex slash dispatch](https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_dispatch.rs)
-20. [Codex goal runtime](https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs)
-21. [Codex goal steering](https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/steering.rs)
-22. [OpenHands goal completion loop](https://github.com/OpenHands/software-agent-sdk/blob/main/examples/01_standalone_sdk/54_goal_completion_loop.py)
-23. [SWE-agent retry implementation](https://github.com/SWE-agent/SWE-agent/blob/main/sweagent/agent/agents.py)
-24. [Agent Execution Harness runner](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/runner.ts)
-25. [Agent Execution Harness finish checks](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/finish-check.ts)
-26. [Agent Execution Harness scope guard](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/scope-guard.ts)
-27. [agent-spec lifecycle source](https://github.com/ZhangHanDong/agent-spec/blob/main/src/spec_gateway/lifecycle.rs)
+14. [Grok plan mode](https://docs.x.ai/build/features/plan-mode)
+15. [Grok permissions](https://docs.x.ai/build/features/permissions)
+16. [Grok 4.6](https://docs.x.ai/developers/grok-4-6)
+17. [agent-spec documentation](https://docs.rs/crate/agent-spec/latest)
+18. [agent-spec repository](https://github.com/ZhangHanDong/agent-spec)
+19. [Agent Execution Harness](https://github.com/lordaeternus/agent-execution-harness)
+20. [comrak documentation](https://docs.rs/comrak/latest/comrak/)
+21. [Codex slash dispatch](https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_dispatch.rs)
+22. [Codex goal runtime](https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs)
+23. [Codex goal steering](https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/steering.rs)
+24. [OpenHands goal completion loop](https://github.com/OpenHands/software-agent-sdk/blob/main/examples/01_standalone_sdk/54_goal_completion_loop.py)
+25. [SWE-agent retry implementation](https://github.com/SWE-agent/SWE-agent/blob/main/sweagent/agent/agents.py)
+26. [Agent Execution Harness runner](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/runner.ts)
+27. [Agent Execution Harness finish checks](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/finish-check.ts)
+28. [Agent Execution Harness scope guard](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/scope-guard.ts)
+29. [agent-spec lifecycle source](https://github.com/ZhangHanDong/agent-spec/blob/main/src/spec_gateway/lifecycle.rs)
 
 ### Additional current sources
 
