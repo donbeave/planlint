@@ -17,6 +17,10 @@ The original conclusion still holds, with two material corrections:
 - Grok Build now ships and publishes source for a native `/goal` harness. Older
   conclusions that require an outer ACP controller are superseded by the
   source-pinned trace in [Goal-execution research](goal-execution.md).
+- Rig is a lower-level Rust runtime, not a native `/goal` host. Its current
+  source supplies serializable run state, hooks, and experimental evals, while
+  its roadmap leaves durable session/run control and workflow orchestration to
+  the host.
 
 ## Confirmed claims
 
@@ -55,6 +59,14 @@ The original conclusion still holds, with two material corrections:
   contradiction, unverifiable, no-progress, and budget outcomes. The native
   plan is not human-approved, verifier authority remains model-mediated, and no
   closed-world changed-path rule is mechanically enforced.
+- **Rig:** current official docs and source expose no native `/goal` command or
+  goal lifecycle. `rig-run::AgentRun` is a serializable sans-IO
+  `CallModel`/`CallTools`/`Done` state machine; `AgentRunner` and `AgentHook`
+  provide configured execution and per-run steering; experimental evals provide
+  `Pass`/`Fail`/`Invalid` input/output judgments. A durable goal controller,
+  plan approval, outer retry loop, repository verifier, and terminal receipt
+  remain host responsibilities. High-level runner resume is still an open
+  roadmap issue.
 - **Claude Code context:** current goal documentation says the condition is
   restored on resume but turn/time/token baselines reset; `/goal` continues the
   same session rather than creating a fresh execution context. Background work
@@ -146,6 +158,13 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 30. [Grok Build goal state](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L422-L636)
 31. [Grok Build goal evaluator](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_evaluator.rs)
 32. [Grok Build verification stage](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_classifier.rs#L1870-L2217)
+33. [Rig](https://rig.rs/)
+34. [Rig architecture](https://docs.rig.rs/docs/architecture)
+35. [Rig agent concepts](https://docs.rig.rs/docs/concepts/agent)
+36. [Rig evals](https://docs.rig.rs/docs/concepts/evals)
+37. [Rig `AgentRun` source](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-run/src/run.rs)
+38. [Rig interactive-agent roadmap](https://github.com/0xPlaygrounds/rig/issues/2118)
+39. [Rig runner resume issue](https://github.com/0xPlaygrounds/rig/issues/2244)
 
 ### Additional current sources
 
