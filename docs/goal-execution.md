@@ -524,6 +524,17 @@ it blocked only under the native repeated-blocker rule.
    review points; resume only after the recorded cause changes. Prefer a
    dedicated worktree for every goal.
 
+Native payload shape:
+
+```text
+/goal Execute exactly .agent/goals/GX-42.md at the recorded SHA-256. Preserve
+its acceptance criteria and allowed-path set in the derived goal plan. Run
+`planlint verify .agent/goals/GX-42.md --receipt
+.agent/receipts/GX-42.json`; completion requires `PASS GX-42 <receipt-sha>`.
+Treat PLAN_GAP, STALE, BLOCKED, or FAIL as non-fixable terminal evidence.
+--budget 150000
+```
+
 ## Research limits
 
 - Closed-source Claude Code conclusions are limited to current official
