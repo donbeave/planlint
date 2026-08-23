@@ -32,6 +32,9 @@ yet claim to implement the compiler.
   Codex, Claude Code, OpenHands, Rig, Cline, and Grok.
 - [Rig agent CLI adapters](docs/rig-agent-cli.md) — how to drive real coding-agent
   CLIs, ACP agents, and HTTP sessions from a Rig host.
+- [Linear backend research](docs/linear-research.md) — Linear capability map,
+  Git/Linear storage comparison, sync ownership, and the recommended hybrid
+  architecture.
 
 ## License
 
