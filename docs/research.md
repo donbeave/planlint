@@ -1447,9 +1447,11 @@ limits, and terminal status.
 - Use `/goal` only as the session continuation wrapper. Put one measurable
   end-state, the exact commands that prove it, forbidden changes, and a turn or
   time bound in the condition.
-- Run `planlint verify` from a command Stop hook. The hook must inspect the
-  actual Git diff and structured test/compiler/linter evidence; surface its
-  compact diagnostic in the transcript so Claude’s evaluator can act on it.
+- In the native profile, make the worker run `planlint verify`, surface its
+  canonical result, and have the outer process independently validate the
+  receipt. In the strict profile, replace native `/goal` with a deterministic
+  command Stop hook. Do not stack two Stop-hook completion controllers without
+  explicit coordination.
 - Accept the plan and permissions before enabling unattended turns. Keep one
   plan per session; do not rely on the evaluator to discover missing files or
   unauthorized changes.
@@ -1460,9 +1462,10 @@ limits, and terminal status.
   architecture review. Put detailed contract content in a file when it exceeds
   the goal field; use the documented TUI goal path rather than assuming
   `codex exec` parses slash commands.
-- Attach a Stop hook that runs the deterministic verifier and returns compact
-  continuation diagnostics only for correctable failures. Let the verifier,
-  not the model’s `update_goal Complete`, authorize PASS.
+- Require a deterministic verifier receipt before `update_goal Complete`; the
+  outer process independently validates it. If a Stop hook owns strict
+  continuation, use it as the goal equivalent instead of stacking an
+  uncoordinated second loop on native goal state.
 - Keep normal tool permissions and goal replacement confirmation enabled. Treat
   pause/resume/clear and token/turn budgets as controller state, not model
   suggestions.

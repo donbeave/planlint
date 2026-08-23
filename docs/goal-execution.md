@@ -156,8 +156,8 @@ checker behind `/goal`. Do not infer them from evaluator wording.
 
 ### OpenHands Software Agent SDK
 
-OpenHands SDK provides a small, inspectable goal loop with a clearer
-planner/executor/verifier separation than the other native implementations.
+OpenHands SDK provides a small, inspectable goal loop with an explicit
+executor/controller/judge separation.
 
 ```text
 run_goal(conversation, objective, judge_llm, max_iterations)
@@ -256,8 +256,11 @@ Act flow is not one.
 ### Grok Build
 
 Grok Build's current open-source implementation is a native, durable,
-multi-stage goal harness. It is substantially different from Grok's ordinary
-prompt loop and from the separately documented `/plan` mode.
+multi-stage goal harness. Its official
+[command guide](https://docs.x.ai/build/modes-and-commands) exposes `/goal`
+with status, pause, resume, clear, and token-budget controls. It is
+substantially different from Grok's ordinary prompt loop and from the
+separately documented `/plan` mode.
 
 ```text
 /goal <objective> [--budget <tokens>]
