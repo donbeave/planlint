@@ -61,8 +61,8 @@ same as effective reasoning capacity:
   important information is buried in the middle of a long context.
 - RULER evaluated 17 long-context models and found that only half maintained
   satisfactory performance at 32K, despite all claiming at least 32K support.
-- NoLiMa evaluated models claiming at least 128K contexts and found that 10 of
-  12 fell below half of their short-context baseline by 32K on tasks requiring
+- NoLiMa evaluated 13 models claiming at least 128K contexts and found that 11
+  fell below half of their short-context baseline by 32K on tasks requiring
   associative retrieval rather than direct keyword matching.
 
 These are not coding-agent benchmarks. They do not prove that coding quality
@@ -87,6 +87,34 @@ working set =
 
 Therefore, `150K` should be a configurable **context profile**, not a claim
 embedded in the linter.
+
+Current product context windows make the distinction more important, not less:
+the current OpenAI model catalog lists 1.05M-token context for GPT-5.6, while
+GPT-5.2-Codex lists 400K; current xAI documentation lists 500K for Grok 4.6.
+Those are capacity numbers, not evidence that an agent can keep all repository
+facts active. The linter should enforce a measured working-set budget and
+calibrate it per host/model, rather than treating 150K as a model limit.
+
+Coding-agent-specific evidence makes the rule more precise:
+
+- *The Working Set of a Coding Agent* reports that missing task facts caused
+  agents to guess wrong, while additional token spend did not recover withheld
+  facts. Passing harnesses differed by more than 10× in token use because some
+  repeatedly reconstructed the same context.
+- *When and How Context Rot Appears in Coding Agents* reports 8/10 passes with
+  a 10,991-character clean context versus 3/10 with 299,140-character relevant
+  or irrelevant contexts on one audit task. A second task passed in every
+  condition, so this does not establish a universal threshold. A detailed
+  external checklist passed 10/10 versus 5/10 for a generic self-check.
+- *Coding Agents are Effective Long-Context Processors* reports that agents can
+  use filesystems and executable tools to process corpora far larger than their
+  prompt windows. This argues against inlining the whole repository into a
+  supposedly self-contained plan.
+
+The design target is therefore not “smallest prompt.” It is **smallest complete
+working set**: every required fact available, irrelevant history excluded,
+exact inputs addressable through tools, and an external checklist enforced by
+the verifier.
 
 Initial conservative profile to evaluate:
 
@@ -127,37 +155,77 @@ transcript judgment must never be the authoritative evidence.
 
 ### Codex
 
-OpenAI documents `/goal` for one durable objective with a verifiable stopping
-condition. The goal should state what may not change, what files or plans to
-read, and which commands or artifacts prove progress.
+Current OpenAI documentation exposes native `/goal` in Codex. It describes one
+durable objective, explicit files/docs to read first, commands or artifacts
+that prove progress, and checkpointed work. The documented CLI setup uses the
+`features.goals` flag when the command is not available.
 
-The proposed adapter is:
+Codex also documents a `Stop` hook with a `stop_hook_active` loop guard and a
+JSON continuation decision. Returning this from the hook starts another turn
+using the reason as the continuation prompt:
 
 ```text
-Stop hook:
-    run planlint verify
-    PASS  → allow Codex to stop
-    FAIL  → block and inject compiler-style diagnostics
+{ "decision": "block", "reason": "<planlint diagnostic>" }
 ```
 
-The exact Codex Stop-hook schema must be pinned from an official hook reference
-before implementation. The current research source confirms durable `/goal`,
-but does not by itself establish the exact `decision: "block"` payload.
+Therefore the Codex adapter can use either native `/goal` or a project-local
+Stop hook. Native `/goal` is the least coupled first path; the hook is useful
+when the repository needs deterministic enforcement at every turn:
+
+```text
+Stop hook runs planlint verify
+PLAN PASS                         → exit 0 with no continuation decision
+PLAN_GAP | BLOCKED | STALE | FAIL → persist receipt; exit 0; no continuation
+ordinary verifier failure         → decision: block with compact diagnostics
+```
+
+`stop_hook_active` must cap consecutive automatic retries. The compiler, not
+the hook, owns that retry policy and final state.
 
 ### Grok
 
 Current Grok documentation supports Markdown skills exposed as slash commands,
 lifecycle hooks, and compatibility with Claude Code skills, plugins, hooks, and
 instruction files. No documented built-in Grok `/goal` equivalent was found in
-the checked documentation.
+the checked documentation. Grok documents `Stop` as a passive event whose
+stdout is ignored; only `PreToolUse` can block. A Stop hook may record a verdict
+but cannot continue the agent loop.
 
 The adapter should expose a user-invocable `/tailrocks-goal`, or `/goal` where
-that name is unreserved, backed by the same Rust hook.
+that name is unreserved. Automatic persistence needs an outer Rust controller:
+start a headless session with `grok -p`, resume it with `--resume` after a
+correctable verifier failure, or drive the same loop through ACP. The controller
+stops on `PLAN PASS` or a terminal `PLAN_GAP`, `BLOCKED`, `STALE`, or `FAIL`.
 
 The core remains host-neutral. Claude, Codex, and Grok adapters translate the
-same verifier verdict into each host’s continuation protocol.
+same verifier verdict into each host’s continuation protocol, but Grok cannot
+reuse the Claude/Codex Stop-hook continuation mechanism.
 
 ## Closest existing work
+
+### Markdown spec workflows establish the authoring precedent
+
+GitHub Spec Kit and OpenSpec already make Markdown the repository-visible
+authoring surface. Spec Kit separates specification, plan, and actionable task
+artifacts and adds a convergence loop; OpenSpec uses plain Markdown
+requirements and concrete scenarios, then generates `design.md` and `tasks.md`
+for a change.
+
+They validate the usability and portability of Markdown across coding agents.
+They do not, by themselves, define the proposed authoritative runtime
+contract: immutable acceptance, closed-world changed-path checking,
+non-vacuous evidence, input fingerprints, or a verifier-owned PASS state.
+
+Therefore `planlint` should interoperate with these workflows rather than
+compete with their planning UX:
+
+```text
+Spec Kit / OpenSpec / human Markdown
+    → reviewed bounded plan
+    → planlint check + accept
+    → host /goal execution
+    → planlint verify
+```
 
 ### `agent-spec` is the closest technical foundation
 
@@ -769,12 +837,14 @@ Runtime loop:
 6. Diagnostics return to the agent.
 7. Agent corrects the implementation.
 8. Final verifier runs.
-9. Stop hook permits completion only on PLAN PASS.
+9. Host adapter continues only on a correctable verifier failure and permits
+   completion only on PLAN PASS.
 10. Controller stores receipt and transitions VERIFIED → DONE.
 ```
 
-Host `/goal` evaluators are useful persistence layers. The Rust verifier’s
-verdict is the fact.
+Native `/goal` evaluators are useful persistence layers where available; the
+Grok adapter supplies equivalent persistence outside the host. The Rust
+verifier’s verdict is the fact.
 
 ## Recommended Rust architecture
 
@@ -802,7 +872,7 @@ crates/
 ├── plan-hosts/
 │   ├── Claude Code hook renderer
 │   ├── Codex hook renderer
-│   └── Grok skill/hook renderer
+│   └── Grok skill and headless/ACP controller
 │
 └── planlint/
     └── CLI
@@ -843,7 +913,7 @@ planlint reconcile roadmap/<slug>/plan/
 # Generate host integrations
 planlint host install claude
 planlint host install codex
-planlint host install grok
+planlint host install grok   # skill plus headless/ACP controller
 
 # Explain a diagnostic
 planlint explain PL041
@@ -883,8 +953,8 @@ agent-spec
 planlint
     validates the bounded execution contract
 
-/goal + hooks
-    provide persistence and runtime continuation
+host continuation adapters
+    provide native /goal, hook, or outer-controller persistence
 
 Tailrocks reconcile
     validates package-level completion and state
@@ -917,7 +987,7 @@ Test four conditions:
 A. Free-form /goal prompt
 B. Markdown plan template only
 C. Markdown plan + static compiler
-D. Markdown plan + compiler + proof engine + Stop hook
+D. Markdown plan + compiler + proof engine + host continuation adapter
 ```
 
 Run identical accepted tasks from identical clean commits across all four.
@@ -1026,8 +1096,8 @@ Add:
 Add:
 
 - Claude Code Stop hook
-- Codex Stop hook
-- Grok skill/hook adapter
+- Codex native `/goal` handoff and Stop hook
+- Grok skill plus headless/ACP continuation controller
 - one-plan-per-fresh-session scheduler
 - runtime state machine
 - actual context telemetry
@@ -1082,8 +1152,20 @@ iterate on diagnostics, and accept only a proven result**.
 - [NoLiMa — arXiv:2502.05167](https://arxiv.org/abs/2502.05167)
 - [SWE-RPG / unified issue-resolution benchmark — arXiv:2608.09072](https://arxiv.org/abs/2608.09072)
 - [Claude Code goals](https://code.claude.com/docs/en/goal)
+- [Claude Code hooks](https://code.claude.com/docs/en/hooks)
 - [Codex: Follow a goal](https://learn.chatgpt.com/use-cases/follow-goals)
+- [Codex hooks](https://learn.chatgpt.com/docs/hooks)
+- [Codex developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
 - [Grok skills, plugins, and marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)
+- [Grok hooks](https://docs.x.ai/build/features/hooks)
+- [Grok headless and scripting](https://docs.x.ai/build/cli/headless-scripting)
+- [Grok 4.6](https://docs.x.ai/developers/grok-4-6)
+- [OpenAI model catalog](https://developers.openai.com/api/docs/models)
+- [The Working Set of a Coding Agent](https://arxiv.org/abs/2608.16630)
+- [Coding Agents are Effective Long-Context Processors](https://arxiv.org/abs/2603.20432)
+- [When and How Context Rot Appears in Coding Agents](https://arxiv.org/abs/2607.17937)
+- [GitHub Spec Kit](https://github.com/github/spec-kit)
+- [OpenSpec](https://github.com/Fission-AI/OpenSpec)
 - [agent-spec](https://github.com/ZhangHanDong/agent-spec)
 - [Agent Execution Harness](https://github.com/lordaeternus/agent-execution-harness)
 - [comrak](https://docs.rs/comrak/latest/comrak/)
