@@ -28,6 +28,8 @@ yet claim to implement the compiler.
 
 - [Research archive](docs/research.md) — complete design proposal and source links.
 - [Research review](docs/research-review.md) — checked claims, corrections, and open verification items.
+- [Goal-execution research](docs/goal-execution.md) — source-level comparison of
+  Codex, Claude Code, OpenHands, Cline, and Grok.
 
 ## License
 
