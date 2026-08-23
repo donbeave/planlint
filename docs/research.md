@@ -1,0 +1,1089 @@
+# planlint research archive
+
+Status: design basis, not implementation.
+
+Reviewed: 2026-08-23.
+
+## Verdict
+
+This is a strong concept. The right product is not merely a Markdown linter;
+it is a Rust **plan-contract compiler** with a deterministic verification
+runtime.
+
+The proposed execution model is:
+
+```text
+accepted specification
+        ↓
+pure-Markdown plan item
+        ↓
+Rust static checker
+        ↓
+one fresh /goal execution
+        ↓
+deterministic verifier
+        ↓
+evidence receipt
+        ↓
+DONE or explicit failure state
+```
+
+The agent remains probabilistic while producing code, but acceptance becomes
+deterministic. The useful Rust analogy is:
+
+```text
+Rust source → compiler diagnostics → developer edits → compiler passes
+
+Plan contract → verifier diagnostics → agent edits → verifier passes
+```
+
+Research supports the direction. CodePlan framed repository-level changes as
+dependency-aware planning and, in its FSE evaluation, got 5 of 7 repositories
+through validity checks while equivalent non-planning baselines got none
+through. The August 2026 SWE-RPG preprint reports that current coding agents
+resolved 31.5% of its tasks on average and identifies recovery of implicit
+requirements as a major failure source. Small plans and mechanical gates help,
+but the tool also needs an explicit **`PLAN_GAP`** state instead of allowing
+the executor to guess missing requirements.
+
+These findings do not prove that this exact product will work. They justify a
+purpose-built evaluation.
+
+## The “150K smart context” correction
+
+The 150K hypothesis is directionally useful, but **150K is not a scientifically
+established universal smart-context threshold**.
+
+Long-context research repeatedly shows that advertised capacity is not the
+same as effective reasoning capacity:
+
+- *Lost in the Middle* found that models often perform much worse when
+  important information is buried in the middle of a long context.
+- RULER evaluated 17 long-context models and found that only half maintained
+  satisfactory performance at 32K, despite all claiming at least 32K support.
+- NoLiMa evaluated models claiming at least 128K contexts and found that 10 of
+  12 fell below half of their short-context baseline by 32K on tasks requiring
+  associative retrieval rather than direct keyword matching.
+
+These are not coding-agent benchmarks. They do not prove that coding quality
+collapses at 32K or that 150K is optimal. They establish a more useful rule:
+
+> Minimize the task’s effective working set instead of trying to fill the
+> advertised context window.
+
+The working set is not just plan Markdown:
+
+```text
+working set =
+    system and repository instructions
+  + skills loaded by the agent
+  + the plan item
+  + referenced requirements and decisions
+  + mandatory source files
+  + compiler and test output
+  + patch history
+  + reasoning and retry reserve
+```
+
+Therefore, `150K` should be a configurable **context profile**, not a claim
+embedded in the linter.
+
+Initial conservative profile to evaluate:
+
+```toml
+[profiles.goal-150k]
+hard_peak_tokens = 150000
+target_peak_tokens = 100000
+max_initial_packet_tokens = 60000
+max_plan_tokens = 12000
+max_changed_paths = 8
+max_steps = 8
+max_acceptance_gates = 2
+max_tool_output_bytes = 250000
+```
+
+These are starting policies, not universal values. Calibrate separately for
+Claude, Codex, Grok, model class, repository, and task type.
+
+## `/goal` is persistence, not authority
+
+This distinction is critical.
+
+### Claude Code
+
+Claude Code’s `/goal` keeps a session running across turns and uses a small
+model after each turn to decide whether the completion condition appears
+satisfied. Its evaluator does not independently run commands or inspect files;
+it evaluates what was surfaced in the transcript. Claude Code also distinguishes
+`/goal` from a Stop hook: a Stop hook can run a deterministic script.
+
+```text
+Claude /goal evaluator = keeps trying
+Rust verifier          = decides whether work passed
+```
+
+The agent must surface the verifier’s final result in the transcript, but the
+transcript judgment must never be the authoritative evidence.
+
+### Codex
+
+OpenAI documents `/goal` for one durable objective with a verifiable stopping
+condition. The goal should state what may not change, what files or plans to
+read, and which commands or artifacts prove progress.
+
+The proposed adapter is:
+
+```text
+Stop hook:
+    run planlint verify
+    PASS  → allow Codex to stop
+    FAIL  → block and inject compiler-style diagnostics
+```
+
+The exact Codex Stop-hook schema must be pinned from an official hook reference
+before implementation. The current research source confirms durable `/goal`,
+but does not by itself establish the exact `decision: "block"` payload.
+
+### Grok
+
+Current Grok documentation supports Markdown skills exposed as slash commands,
+lifecycle hooks, and compatibility with Claude Code skills, plugins, hooks, and
+instruction files. No documented built-in Grok `/goal` equivalent was found in
+the checked documentation.
+
+The adapter should expose a user-invocable `/tailrocks-goal`, or `/goal` where
+that name is unreserved, backed by the same Rust hook.
+
+The core remains host-neutral. Claude, Codex, and Grok adapters translate the
+same verifier verdict into each host’s continuation protocol.
+
+## Closest existing work
+
+### `agent-spec` is the closest technical foundation
+
+The strongest related project found is the Rust project `agent-spec`. It
+describes itself as an **intent compiler** and implements this pipeline:
+
+```text
+human intent
+→ requirements
+→ Task Contracts
+→ implementation
+→ deterministic lifecycle verification
+→ trace and liveness
+```
+
+Its Task Contracts are Markdown documents containing Intent, Decisions,
+Boundaries, and Completion Criteria. Completion scenarios bind explicitly to
+tests, and intermediate gates are intended to be deterministic and model-free.
+
+A real `agent-spec` task contract is close to the needed specification layer:
+
+- requirement links through `satisfies`
+- allowed paths
+- forbidden changes
+- out-of-scope work
+- explicit completion scenarios
+- named proving tests
+
+Its architecture separates code intelligence, typed code bindings, quality
+providers, execution bundles, lifecycle verdicts, and trace evidence.
+
+Its mismatch is that it primarily represents a **behavioral contract**, not a
+`/goal` execution item. It does not fully represent:
+
+- exact ordered implementation steps
+- per-step verification
+- preconditions and starting-state drift
+- one-fresh-context execution
+- whole-working-set context budgets
+- explicit `PLAN_GAP` and STOP behavior
+- immutable plan fingerprints
+- host-specific `/goal` continuation adapters
+
+It correctly acknowledges that passing a contract does not prove the contract
+was comprehensive. That limitation must remain visible in this design.
+
+### Agent Execution Harness validates much of the runtime idea
+
+Agent Execution Harness has narrow tasks, typed evidence, strict command
+allowlists, compact handoffs, explicit verification, completion checking, and
+worker-patch validation. In strict mode, shell-style commands are blocked
+unless declared.
+
+Its architectural mismatch is important: it imports an atomic Markdown backlog
+into `plan.json`, then uses JSON as the operational plan. It is also implemented
+in TypeScript.
+
+It validates demand for an execution harness while leaving a clear place for
+this narrower design:
+
+> Rust, canonical Markdown, compiler diagnostics, context budgeting, and
+> native `/goal` adapters.
+
+### Tailrocks already contains most contract semantics
+
+The existing Tailrocks plan workflow, as supplied for this research, already
+requires:
+
+- one zero-context plan per work item
+- vertical, independently verifiable slices
+- one fresh executor session
+- explicit paths and code shapes
+- preconditions
+- in-scope and out-of-scope paths
+- Must NOT constraints
+- done criteria
+- STOP conditions
+- verification commands run during planning
+
+The goal handoff freezes the plan package with a fingerprint and requires each
+final gate to have the form:
+
+```text
+command ||| proof
+```
+
+The proof must demonstrate that non-zero work executed, specifically to prevent
+commands that exit successfully after running zero tests.
+
+The new Rust project should not redesign that workflow. It should compile and
+enforce the workflow already present.
+
+## Three contract layers
+
+The clean architecture has three document types.
+
+### 1. Specification contract — what must be true
+
+Contains product behavior, decisions, scenarios, and forbidden behavior:
+
+```text
+REQ-RETRY-01:
+The client MUST stop after the configured attempt limit.
+```
+
+`agent-spec` is a plausible backend for this layer.
+
+### 2. Plan contract — one bounded change that produces it
+
+Declares:
+
+- exact outcome
+- requirements covered
+- dependencies
+- starting inputs
+- files or symbols allowed to change
+- steps
+- focused checks
+- final proof obligations
+- STOP conditions
+- context budget
+
+This is the new Rust compiler’s input.
+
+### 3. Goal contract — when the executor may continue or stop
+
+Should remain extremely small:
+
+```text
+Execute exactly PLAN-014.
+Continue until the authoritative verifier prints PLAN PASS.
+Do not broaden scope.
+On PLAN_GAP, BLOCKED, STALE, or FAIL, persist that state and stop.
+```
+
+The separation prevents duplication:
+
+```text
+specification = what
+plan          = how, for one bounded slice
+goal          = runtime continuation rule
+```
+
+The plan references specification IDs rather than copying the entire
+specification. Where zero-context execution requires an excerpt, the compiler
+can assemble it into a temporary execution packet without creating a second
+authored source of truth.
+
+## Pure Markdown dialect
+
+Pure Markdown is a good canonical format, but it must be constrained.
+
+Rules:
+
+- no JSON plan source
+- no embedded XML
+- no mandatory YAML frontmatter
+- standard headings, lists, code spans, and fenced blocks
+- one plan file is one compilation unit
+- an internal typed Rust IR is never treated as the authored source
+- JSON or SARIF is allowed only for generated diagnostics and receipts
+
+Example plan:
+
+```markdown
+# PLAN-014: Enforce bounded client retries
+
+## Contract
+
+- **Version:** `1`
+- **Covers:** `REQ-RETRY-01`, `REQ-RETRY-02`
+- **Depends on:** `PLAN-013`
+- **Context profile:** `goal-150k`
+- **Planned at:** `4f12a8c`
+
+## Outcome
+
+The client stops retrying after the configured attempt budget and returns
+the existing terminal error without changing the public API.
+
+## Inputs
+
+- `crates/client/src/retry.rs#RetryPolicy`
+- `crates/client/tests/retry.rs`
+- `specs/client-retry.spec.md#REQ-RETRY-01`
+
+## Scope
+
+### May change
+
+- `crates/client/src/retry.rs`
+- `crates/client/tests/retry.rs`
+
+### May create
+
+- None.
+
+### Must not
+
+- Change any public function signature.
+- Add a runtime dependency.
+- Change retry timing outside the attempt-counting path.
+- Modify a path not listed under **May change**.
+
+## Preconditions
+
+### PRE-1: Existing retry tests are green
+
+- **Run:** `mise run test-client-retry`
+- **Evidence:** `junit:target/nextest/ci/junit.xml`
+- **Proves:** `tests >= 2 && failures == 0`
+
+### PRE-2: The planned source has not drifted
+
+- **Run:** `planlint drift PLAN-014`
+- **Proves:** `changed_inputs == 0`
+
+## Steps
+
+### STEP-1: Count completed attempts
+
+Add attempt accounting inside `RetryPolicy` without changing its public
+construction API.
+
+- **Verify:** `mise run test-client-retry-focused`
+- **Evidence:** `junit:target/nextest/ci/focused.xml`
+- **Proves:** `tests == 1 && failures == 0`
+- **Covers:** `REQ-RETRY-01`
+
+### STEP-2: Preserve the terminal error
+
+Add the exhausted-budget case to the existing retry integration test.
+
+- **Verify:** `mise run test-client-retry`
+- **Evidence:** `junit:target/nextest/ci/junit.xml`
+- **Proves:** `tests >= 3 && failures == 0`
+- **Covers:** `REQ-RETRY-02`
+
+## Acceptance
+
+### ACC-1: Retry behavior
+
+- **Run:** `mise run test-client-retry`
+- **Evidence:** `junit:target/nextest/ci/junit.xml`
+- **Proves:** `tests >= 3 && failures == 0`
+
+### ACC-2: Rust static gate
+
+- **Run:** `mise run lint-client`
+- **Evidence:** `cargo-json:stdout`
+- **Proves:** `compiler_artifacts >= 2 && error_diagnostics == 0`
+
+### ACC-3: Scope gate
+
+- **Run:** `planlint scope PLAN-014 --worktree`
+- **Proves:** `unexpected_paths == 0`
+
+## Stop conditions
+
+- `PLAN_GAP` if a required change falls outside **May change**.
+- `BLOCKED` if a precondition fails.
+- `STALE` if an input fingerprint differs from the accepted snapshot.
+- `FAIL` if the same verification fails twice after a focused correction.
+```
+
+Meaning must come from headings, identifiers, and fields—not an LLM
+interpreting arbitrary prose.
+
+## What the compiler should prove
+
+The authoritative condition is approximately:
+
+```text
+PASS(plan, diff, evidence) =
+    contract fingerprint matches
+    AND all dependencies are VERIFIED
+    AND all preconditions hold
+    AND changed paths are a subset of allowed paths
+    AND every covered requirement has passing evidence
+    AND every changed path is justified by a step
+    AND every acceptance gate executed non-zero work
+    AND no Must-not or Stop condition was triggered
+```
+
+### Static checks
+
+The side-effect-free `check` command validates Markdown without running
+anything.
+
+| Rule | Blocking condition |
+| --- | --- |
+| `PL001` | Missing or duplicate required section |
+| `PL010` | Missing or duplicate plan, step, precondition, or acceptance ID |
+| `PL020` | Dangling plan dependency or dependency cycle |
+| `PL021` | Two supposedly parallel plans have overlapping write scopes |
+| `PL030` | Requirement is declared under `Covers` but has no proving acceptance criterion |
+| `PL031` | Step or changed surface has no requirement justification |
+| `PL040` | Scope is absent, contradictory, or excessively broad |
+| `PL041` | Verification can pass without demonstrating executed work |
+| `PL050` | Estimated working set exceeds its context profile |
+| `PL060` | Plan or input fingerprint has drifted |
+| `PL070` | Command uses undeclared shell interpolation, network, environment, or working directory |
+| `PL080` | Placeholder, unresolved decision, `TBD`, or ambiguous implementation choice |
+
+`PL080` may be a warning for ordinary prose ambiguity. It must be an error
+when ambiguity would require the executor to choose architecture, scope, or
+acceptance semantics.
+
+### Compiler-style diagnostics
+
+Output should look like Rust diagnostics:
+
+```text
+error[PL041]: verification can succeed without executing work
+  --> roadmap/retry/plan/014-bounded-retry.md:63:15
+   |
+63 | - **Proves:** `process.exit == 0`
+   |               ^^^^^^^^^^^^^^^^^^ no evidence unit is required
+   |
+   = help: require a non-zero count or exact selector, for example:
+           `tests >= 1 && failures == 0`
+```
+
+This is more useful to humans and agents than “Plan is not detailed enough.”
+
+### Dynamic checks
+
+Execution is separated into explicit commands:
+
+```text
+planlint check   # parse and lint; no execution
+planlint probe   # run preconditions and gates before human acceptance
+planlint verify  # verify an implementation against the frozen plan
+```
+
+Merely linting a Markdown file must never execute commands from it.
+
+## Verification must be non-vacuous
+
+A simple verification command is necessary but not sufficient.
+
+Weak gates include:
+
+```text
+cargo test exits 0
+npm test succeeds
+the project builds
+```
+
+They can pass when:
+
+- the package name no longer resolves as expected
+- a test filter matches zero tests
+- all matching tests are ignored
+- the command checks the wrong workspace
+- expected output was never generated
+- a test command succeeds without exercising the changed entry point
+
+A strong gate has three parts:
+
+```text
+command
++ structured evidence source
++ proof predicate
+```
+
+Example:
+
+```markdown
+- **Run:** `mise run test-client-retry`
+- **Evidence:** `junit:target/nextest/ci/junit.xml`
+- **Proves:** `tests >= 3 && failures == 0`
+```
+
+First proof adapters:
+
+1. `junit` — test count, failures, skipped tests, named cases.
+2. `cargo-json` — packages, targets, compiler artifacts, diagnostics.
+3. `sarif` — static-analysis findings.
+4. `git-diff` — changed, created, deleted, and renamed paths.
+5. `file` — path existence, count, hash, and exact-content predicates.
+6. `command-json` — repository-specific tools that emit a documented JSON schema.
+
+Arbitrary terminal-text regexes should be lower-assurance fallback only.
+Structured reports are more stable.
+
+The command runner declares:
+
+```text
+executable
+arguments
+working directory
+timeout
+output limit
+network policy
+environment allowlist
+```
+
+Strict mode rejects shell pipes, redirections, command substitution, and
+undeclared variables. A human may explicitly opt into shell execution for a
+trusted repository; it is not the default.
+
+## Context-budget checker
+
+The linter computes both **authored size** and **working-set estimate**.
+
+### Authored size
+
+```text
+plan Markdown tokens
++ inlined requirement excerpts
++ inlined command output examples
+```
+
+### Working-set estimate
+
+```text
+base host instructions
++ applicable AGENTS.md / CLAUDE.md
++ selected skills
++ plan
++ required spec excerpts
++ required source inputs
++ dependency-plan summaries
++ expected command output
++ reserved execution history
+```
+
+Every input is explicit. Broad discovery instructions such as these should be
+warnings or errors:
+
+```text
+Read the codebase.
+Inspect all relevant files.
+Update anything necessary.
+```
+
+Prefer:
+
+```markdown
+## Inputs
+
+- `crates/client/src/retry.rs#RetryPolicy`
+- `crates/client/src/error.rs#ClientError`
+- `crates/client/tests/retry.rs`
+```
+
+At `probe` time, resolve inputs and record:
+
+- file hashes
+- symbol locations
+- byte count
+- estimated tokens
+- accepted commit
+- expected tool-output budget
+
+A broad glob may be permitted, but it must be expanded and frozen during
+acceptance. If `crates/client/**` resolved to 41 files when accepted and later
+resolves to 47, the plan becomes `STALE` until reviewed.
+
+The runtime receipt records estimated and actual context use. Claude’s current
+`/goal` status reports token spend, which can be captured for calibration.
+
+## Slicing discipline
+
+One small task does not mean one arbitrary code fragment.
+
+A good plan item is:
+
+- small enough for one fresh context
+- a complete vertical behavior slice
+- independently verifiable
+- dependency-aware
+- able to leave the repository green
+- closed enough that the executor does not need a new architectural decision
+
+Poor split:
+
+```text
+PLAN-001: Add database types
+PLAN-002: Add service
+PLAN-003: Add API
+PLAN-004: Add tests
+```
+
+The first three plans have no independent behavioral proof.
+
+Better split:
+
+```text
+PLAN-001: Establish a passing skeleton and verification baseline
+PLAN-002: Support one end-to-end successful flow
+PLAN-003: Add one failure flow with its proof
+PLAN-004: Migrate remaining callers
+PLAN-005: Remove the old path
+```
+
+The compiler checks write-set overlap:
+
+```text
+PLAN-014 writes retry.rs
+PLAN-015 writes retry.rs
+no dependency edge exists
+```
+
+That produces a dependency error or forces sequential execution. Plans are
+safely parallel only when dependencies are verified and resolved write sets are
+disjoint.
+
+## Runtime state is separate from the plan
+
+The Markdown plan is immutable after acceptance. Do not put mutable checkboxes
+or current status inside the plan contract.
+
+Use a separate state machine:
+
+```text
+TODO
+  ↓
+CLAIMED
+  ↓
+CANDIDATE
+  ↓
+VERIFIED
+  ↓
+DONE
+```
+
+Failure states:
+
+```text
+BLOCKED   — environment or precondition failure
+PLAN_GAP  — correct implementation requires unapproved work
+STALE     — plan or starting inputs changed
+FAIL      — proof failed within the permitted correction loop
+REJECTED  — human explicitly chose not to execute it
+```
+
+Only the Rust controller transitions state. The agent reports evidence but
+cannot mark itself `DONE`.
+
+Generated receipts may be JSON because they are output artifacts, not the
+authored contract:
+
+```json
+{
+  "plan_id": "PLAN-014",
+  "contract_hash": "blake3:...",
+  "base_commit": "4f12a8c",
+  "head_commit": "98ca301",
+  "status": "verified",
+  "changed_paths": [
+    "crates/client/src/retry.rs",
+    "crates/client/tests/retry.rs"
+  ],
+  "checks": [
+    {
+      "id": "ACC-1",
+      "tests": 3,
+      "failures": 0,
+      "evidence_hash": "blake3:..."
+    }
+  ],
+  "unexpected_paths": 0
+}
+```
+
+Bind the receipt to:
+
+```text
+accepted plan hash
++ accepted starting commit
++ resulting commit
++ changed paths
++ exact commands
++ structured evidence hashes
+```
+
+This makes the result replayable and auditable.
+
+## Suggested `/goal` handoff
+
+The goal prompt stays tiny:
+
+```text
+/goal Execute only `roadmap/retry/plan/014-bounded-retry.md`.
+
+Follow its scope, steps, Must-not rules, and Stop conditions exactly.
+Do not modify the plan.
+
+Continue until:
+
+planlint verify roadmap/retry/plan/014-bounded-retry.md --worktree
+
+prints `PLAN PASS` for the current accepted contract hash.
+
+On `PLAN_GAP`, `BLOCKED`, `STALE`, or `FAIL`, persist that state and stop.
+Do not broaden scope or replace a failed proof with a weaker proof.
+```
+
+Runtime loop:
+
+```text
+1. Rust controller selects one ready plan.
+2. Fresh agent context starts.
+3. Agent reads the plan and exact declared inputs.
+4. Agent implements one step.
+5. Focused verifier runs.
+6. Diagnostics return to the agent.
+7. Agent corrects the implementation.
+8. Final verifier runs.
+9. Stop hook permits completion only on PLAN PASS.
+10. Controller stores receipt and transitions VERIFIED → DONE.
+```
+
+Host `/goal` evaluators are useful persistence layers. The Rust verifier’s
+verdict is the fact.
+
+## Recommended Rust architecture
+
+Do not begin by writing a complete multi-agent orchestrator. Build the smallest
+authoritative core first.
+
+```text
+crates/
+├── plan-contract/
+│   ├── Markdown parser
+│   ├── typed PlanContract IR
+│   ├── source spans
+│   ├── lint rules
+│   ├── dependency graph
+│   └── context estimator
+│
+├── plan-proof/
+│   ├── command policy
+│   ├── JUnit adapter
+│   ├── Cargo JSON adapter
+│   ├── SARIF adapter
+│   ├── Git diff adapter
+│   └── evidence receipts
+│
+├── plan-hosts/
+│   ├── Claude Code hook renderer
+│   ├── Codex hook renderer
+│   └── Grok skill/hook renderer
+│
+└── planlint/
+    └── CLI
+```
+
+Practical stack:
+
+- `comrak` for CommonMark/GFM parsing and AST traversal
+- `miette` for Rust-like diagnostics with source spans
+- `petgraph` for dependency graphs and cycle detection
+- `cargo_metadata` for Cargo metadata and JSON message processing
+- `globset`, `ignore`, and `camino` for path handling
+- `blake3` for fingerprints
+- `serde` for generated receipts, never the canonical plan format
+- `clap` for the CLI
+
+Suggested commands:
+
+```bash
+# Static, side-effect-free compilation
+planlint check roadmap/<slug>/plan/
+
+# Resolve inputs and execute every proposed proof once
+planlint probe roadmap/<slug>/plan/014-bounded-retry.md
+
+# Record human acceptance and freeze the contract
+planlint accept roadmap/<slug>/plan/014-bounded-retry.md
+
+# Render the minimal context packet
+planlint packet roadmap/<slug>/plan/014-bounded-retry.md
+
+# Verify current changes
+planlint verify roadmap/<slug>/plan/014-bounded-retry.md --worktree
+
+# Reconcile plan state against repository evidence
+planlint reconcile roadmap/<slug>/plan/
+
+# Generate host integrations
+planlint host install claude
+planlint host install codex
+planlint host install grok
+
+# Explain a diagnostic
+planlint explain PL041
+```
+
+Output formats:
+
+```text
+human compiler diagnostics
+JSON
+SARIF 2.1.0
+compact agent diagnostics
+```
+
+Compact agent output contains only:
+
+```text
+diagnostic ID
+file and span
+observed fact
+required fact
+one suggested correction
+```
+
+This prevents the verifier from consuming excessive context.
+
+## Combining with `agent-spec`
+
+Do not fork all of `agent-spec` immediately.
+
+Use this division:
+
+```text
+agent-spec
+    validates the behavioral/specification contract
+
+planlint
+    validates the bounded execution contract
+
+/goal + hooks
+    provide persistence and runtime continuation
+
+Tailrocks reconcile
+    validates package-level completion and state
+```
+
+A plan acceptance criterion can invoke `agent-spec` directly:
+
+```markdown
+### ACC-4: Behavioral contract
+
+- **Run:** `agent-spec lifecycle specs/client-retry.spec.md --code .`
+- **Evidence:** `agent-spec-json:stdout`
+- **Proves:** `passed >= 2 && failed == 0 && skipped == 0 && uncertain == 0`
+```
+
+This keeps “what the product must do” separate from “how one executor should
+modify the repository.” Initially integrate through the stable CLI and pin an
+accepted `agent-spec` version. Upstream shared parser or evidence APIs later if
+the experiment proves useful.
+
+## Evaluation design
+
+No public benchmark was found that directly evaluates this exact combination:
+pure-Markdown plan contracts, deterministic Rust verification, and `/goal`
+execution across Claude, Codex, and Grok. Build a purpose-made evaluation.
+
+Test four conditions:
+
+```text
+A. Free-form /goal prompt
+B. Markdown plan template only
+C. Markdown plan + static compiler
+D. Markdown plan + compiler + proof engine + Stop hook
+```
+
+Run identical accepted tasks from identical clean commits across all four.
+
+### Primary metric
+
+The primary metric is not completion rate. It is:
+
+```text
+false PASS rate
+```
+
+A false PASS occurs when completion is declared even though:
+
+- a requirement was not implemented
+- a forbidden change occurred
+- zero tests executed
+- the wrong target was tested
+- a necessary entry point was not exercised
+- a plan was stale
+- scope expanded without documentation
+
+### Additional metrics
+
+Measure:
+
+- task success
+- unauthorized-path rate
+- requirement coverage recall
+- change-to-requirement precision
+- correct `PLAN_GAP` detection
+- verifier mutation score
+- median turns to verified completion
+- median tokens to verified completion
+- peak working-set tokens
+- repeated-run variance
+- human interventions
+- plans requiring re-planning
+
+### Mutation corpus
+
+Every verifier release is tested against deliberately broken variants:
+
+```text
+replace a test command with `true`
+make a test selector match zero tests
+point a gate at the wrong package
+delete one requirement-to-proof edge
+introduce a dependency cycle
+modify one forbidden file
+change a frozen input after acceptance
+add an undeclared runtime dependency
+make a plan require an unlisted source file
+exceed the context profile
+weaken `tests >= 3` to `process.exit == 0`
+```
+
+Expected result is not always `FAIL`. For an unlisted source file, the correct
+result is:
+
+```text
+PLAN_GAP
+```
+
+That distinction prevents the agent from turning every plan defect into an
+improvised implementation decision.
+
+## Delivery sequence
+
+### Version 0.1 — static plan compiler
+
+Implement only:
+
+- strict Markdown grammar
+- source-span diagnostics
+- IDs and required sections
+- dependency DAG
+- write-scope overlap
+- requirement coverage
+- closed-world scope
+- proof syntax validation
+- context estimation
+- contract fingerprinting
+- fixtures and mutation tests
+
+No command execution and no LLM-based rules.
+
+### Version 0.2 — proof engine
+
+Add:
+
+- `probe`
+- `verify`
+- JUnit
+- Cargo JSON
+- SARIF
+- Git scope verification
+- non-vacuity checking
+- strict argv execution
+- timeout and output limits
+- evidence receipts
+- clean-worktree verification
+
+### Version 0.3 — `/goal` controller
+
+Add:
+
+- Claude Code Stop hook
+- Codex Stop hook
+- Grok skill/hook adapter
+- one-plan-per-fresh-session scheduler
+- runtime state machine
+- actual context telemetry
+- reconcile
+- automatic blocking diagnostics
+
+Only after these versions are evaluated should the tool consider parallel
+agents, remote sandboxes, or broader orchestration.
+
+## Final recommendation
+
+Build a small Rust project tentatively called **`planlint`**, designed
+internally as a **plan-contract compiler**.
+
+Defining rules:
+
+```text
+Markdown is the canonical source.
+One plan is one coherent vertical slice.
+One plan runs in one fresh context.
+The plan is frozen after human acceptance.
+Unlisted necessary work is PLAN_GAP.
+Exit zero is not evidence.
+Every requirement needs a non-vacuous proof.
+Every changed surface needs a requirement.
+Only the Rust controller can declare PASS.
+```
+
+Target Tailrocks pipeline:
+
+```text
+tailrocks-plan
+    → planlint check
+    → planlint probe
+    → human acceptance
+    → /goal executes one plan
+    → planlint verify
+    → evidence receipt
+    → reconcile
+    → DONE
+```
+
+This is a credible path toward making agent execution behave less like “ask an
+LLM to implement the plan” and more like **compile an accepted contract,
+iterate on diagnostics, and accept only a proven result**.
+
+## Source links
+
+- [CodePlan — Microsoft Research](https://www.microsoft.com/en-us/research/publication/codeplan-repository-level-coding-using-llms-and-planning-2/)
+- [Lost in the Middle — arXiv:2307.03172](https://arxiv.org/abs/2307.03172)
+- [RULER — arXiv:2404.06654](https://arxiv.org/abs/2404.06654)
+- [NoLiMa — arXiv:2502.05167](https://arxiv.org/abs/2502.05167)
+- [SWE-RPG / unified issue-resolution benchmark — arXiv:2608.09072](https://arxiv.org/abs/2608.09072)
+- [Claude Code goals](https://code.claude.com/docs/en/goal)
+- [Codex: Follow a goal](https://learn.chatgpt.com/use-cases/follow-goals)
+- [Grok skills, plugins, and marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)
+- [agent-spec](https://github.com/ZhangHanDong/agent-spec)
+- [Agent Execution Harness](https://github.com/lordaeternus/agent-execution-harness)
+- [comrak](https://docs.rs/comrak/latest/comrak/)
