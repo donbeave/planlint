@@ -247,12 +247,12 @@ and the harness does not mechanically deny undeclared paths.
 ### Rig
 
 Rig is a Rust framework/runtime, not a host product with a native `/goal`
-controller. Its current `main` source at
-[`2b271b66ca21b5baa230e42589ca00184f43af59`](https://github.com/0xPlaygrounds/rig/tree/2b271b66ca21b5baa230e42589ca00184f43af59)
+controller. Its latest release, [v0.42.0](https://github.com/0xPlaygrounds/rig/releases/tag/v0.42.0)
+at
+[`d5a34986a1ad57f1e9c5984b82f8d7438ffc717e`](https://github.com/0xPlaygrounds/rig/tree/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e),
 contains no goal-specific command, objective record, continuation controller,
-or goal evaluator. The closest primitives are a serializable `rig-run`
-`AgentRun`, `AgentRunner`, per-run `AgentHook`s, and an experimental evals
-framework.
+or goal evaluator. The closest primitives are a serializable `rig::AgentRun`,
+`AgentRunner`, and per-run `AgentHook`s.
 
 **Planning and decomposition:** Rig does not plan or decompose a goal. The
 official architecture is provider/model + context + tools + agent; the host
@@ -265,18 +265,21 @@ provider responses, so a custom driver can pause at a tool boundary and resume
 the same run. This is run persistence, not a fresh executor context or a
 durable goal. The high-level `AgentRunner` owns model/tool I/O, memory,
 telemetry, and hooks, but current runner-level resume is an open issue; a
-restored run cannot yet re-enter that full path without a custom driver.
+restored run cannot yet re-enter that full path without a custom driver. Its
+conversation-memory append is not a goal checkpoint: append failure is logged
+while the final response still returns.
 
 **Verification and retry:** `AgentRunner::max_turns` bounds model calls within
-one run. Hooks can retry or stop a model turn, and Rig's experimental evals
-return structured `Pass`, `Fail`, or `Invalid` outcomes, including LLM-judge
-and custom metrics. None supplies an outer corrective retry policy, changed-path
-guard, requirement-to-proof binding, or authoritative repository `PASS`.
-`Invalid` is non-success and must not be promoted to pass.
+one run. A tool-free model turn normally ends that run. A model-turn hook can
+instead retry with verifier feedback or stop, but retries consume the same turn
+budget and have no separate cap. None of these primitives supplies an outer
+corrective retry policy, changed-path guard, requirement-to-proof binding, or
+authoritative repository `PASS`. The official evals page is stale against
+v0.42.0: the release deleted the unused evals module and `experimental` feature.
 
 **Recommendation:** implement `/goal` as a host/controller layer over Rig. Use
 `AgentRunner` for normal configured runs, `AgentHook` for per-run policy and
-telemetry, `rig-run::AgentRun` only when the controller must own mid-run
+telemetry, `rig::AgentRun` only when the controller must own mid-run
 approval and persistence, and `planlint` for the accepted contract, deterministic
 verifier, retry/terminal state, and receipt. This is a supported integration
 architecture, not native Rig behavior. The [interactive-agent roadmap](https://github.com/0xPlaygrounds/rig/issues/2118)
@@ -301,7 +304,7 @@ product does not expose enough implementation detail to verify the claim.
 | SWE-agent | Issue/problem statement plus agent/retry configuration | Tool/action loop, optionally wrapped by retry loop | Environment/task submission and configured retry reviewer | Cost limit; retry attempts hard-reset the environment; formatting/action retries are bounded |
 | Agent Execution Harness | JSON operational plan and run artifact | Explicit action state machine | `finish --check` requires claims, evidence, tasks, rollback, and scope | Declared files, command policy, evidence policy, dependency waves; isolation metadata is advisory |
 | agent-spec | Markdown Task Contract | Contract compiler plus lifecycle verifier | Mechanical lint, bound tests, and explicit non-`skip`/non-`uncertain` verdict | Allowed/forbidden paths and change-set checks; caller AI verifier is secondary and inspectable |
-| Rig | No native goal object; serializable run state and host APIs | `rig-run::AgentRun` + `AgentRunner` + `AgentHook`; optional evals | No native goal authority; optional evals judge input/output only | Per-run turn/retry bounds; run serialization has version/sensitivity caveats; runner resume remains open |
+| Rig | No native goal object; serializable run state and host APIs | `rig::AgentRun` + `AgentRunner` + `AgentHook`; host verifier | Tool-free text normally ends a run; no native goal authority or evaluator | Per-run turn/retry bounds; run serialization has version/sensitivity caveats; runner resume remains open |
 | Grok Build | Persisted `GoalOrchestration`, plan/baseline files, token and verifier state | Hidden planner → worker rounds → structured evaluator → adversarial skeptic panel | Harness applies verifier quorum; deterministic project verifier remains external | Built-in caps and pause states; real diff evidence; no mechanical closed-world path guard; worker remains in parent context |
 
 ### Codex: native persistent goal state machine
@@ -472,24 +475,34 @@ budget controls reusable, but not its task-contract semantics.
 ### Rig: host-extensible run state, not native `/goal`
 
 **Confirmed.** The current source separates protocol state from I/O. The
-[`rig-run::AgentRun` module](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-run/src/run.rs#L1-L34)
+[`rig::AgentRun` module](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/run/mod.rs#L1-L34)
 describes a serializable, sans-IO state machine whose driver handles model and
 tool effects. Its public step protocol is
-[`CallModel` / `CallTools` / `Done`](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-run/src/run.rs#L153-L178);
+[`CallModel` / `CallTools` / `Done`](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/run/mod.rs#L154-L179);
 there is no goal/objective/status state in that protocol.
+Post-release `main` at
+[`2b271b66ca21b5baa230e42589ca00184f43af59`](https://github.com/0xPlaygrounds/rig/tree/2b271b66ca21b5baa230e42589ca00184f43af59)
+extracts this state machine into `rig-run`; it does not add goal semantics.
 
-**Confirmed.** [`AgentRunner`](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-agent/src/agent/runner.rs#L142-L220)
+**Confirmed.** [`AgentRunner`](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/runner.rs#L142-L220)
 is the configured high-level driver. It owns model/tool I/O, conversation
 memory, tracing, and the hook stack. Its `max_turns` is a per-run model-call
-budget, while [`AgentHook`](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-agent/src/agent/hook.rs#L931-L1005)
-can retry or stop model turns and observe tool/result events. These are the
-right extension points for an outer controller, not a built-in continuation
-loop.
+budget. [`AgentRun` completes on an accepted tool-free model
+turn](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/run/mod.rs#L718-L955),
+so text means run completion rather than proof of the objective.
 
-**Confirmed.** Rig's [experimental evals](https://docs.rig.rs/docs/concepts/evals)
-provide `Pass`, `Fail`, and `Invalid`, custom evaluators, LLM judges, and
-semantic-similarity metrics. They evaluate an input/output pair and are not
-wired to inspect a repository, run a goal retry loop, or own a terminal receipt.
+**Confirmed.** [`AgentHook`](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/hook.rs#L584-L704)
+can retry or stop model turns and observe or steer tool events. A goal adapter
+can run a deterministic verifier before accepting a tool-free turn, retry with
+bounded feedback on a correctable failure, and stop on terminal non-success.
+The hook scratchpad is ephemeral; tools and hooks are not serialized inside
+`AgentRun`.
+
+**Confirmed documentation drift.** The [evals concepts page](https://rig.rs/docs/concepts/evals)
+describes APIs absent from v0.42.0. The release [deleted the unused evals module
+and `experimental` feature](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-core/CHANGELOG.md#L481-L506),
+and the [release feature list](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/Cargo.toml#L324-L385)
+has no `experimental` flag. Current Rig therefore has no built-in evaluator.
 
 **Confirmed.** The [Rig interactive-agent roadmap](https://github.com/0xPlaygrounds/rig/issues/2118)
 puts workflow, permissions, storage, and orchestration in the host layer. The
@@ -500,7 +513,7 @@ dispatch, memory, and telemetry intact.
 
 **Supported inference.** Planlint should integrate below its contract compiler:
 `AgentRunner` for ordinary execution, `AgentHook` for per-run policy, and
-`rig-run::AgentRun` only for a custom driver that accepts ownership of model
+`rig::AgentRun` only for a custom driver that accepts ownership of model
 transport and tool execution. Planlint remains the owner of the durable goal,
 plan, deterministic verifier, scope policy, retry cap, and `PASS` receipt.
 
@@ -1551,12 +1564,12 @@ limits, and terminal status.
   accepted contract, evidence receipt, scope policy, retry cap, and terminal
   state in a planlint controller; Rig has no native `/goal` lifecycle.
 - Use `AgentRunner` plus `AgentHook` for normal runs, per-run policy, and
-  telemetry. Use `rig-run::AgentRun` for mid-run approval/persistence only when
+  telemetry. Use `rig::AgentRun` for mid-run approval/persistence only when
   the controller is willing to own model transport, tool execution, and the
   current-version serialization boundary.
-- Rig's experimental evals can provide an optional LLM or metric judge, but
-  `Invalid`, missing evidence, changed paths, and deterministic proof failures
-  must remain non-success. Only planlint declares `PASS`.
+- Run deterministic proof commands and changed-path enforcement in planlint.
+  A custom evaluator agent can route a correction, but only planlint declares
+  `PASS`.
 
 **Grok**
 
@@ -1582,12 +1595,14 @@ limits, and terminal status.
 - [Codex: Follow a goal](https://learn.chatgpt.com/use-cases/follow-goals)
 - [Codex hooks](https://learn.chatgpt.com/docs/hooks)
 - [Codex developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
-- [Rig](https://rig.rs/)
-- [Rig architecture](https://docs.rig.rs/docs/architecture)
-- [Rig agent concepts](https://docs.rig.rs/docs/concepts/agent)
-- [Rig evals](https://docs.rig.rs/docs/concepts/evals)
-- [Rig `AgentRun` source](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-run/src/run.rs)
-- [Rig `AgentRunner` source](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-agent/src/agent/runner.rs)
+- [Rig v0.42.0](https://github.com/0xPlaygrounds/rig/releases/tag/v0.42.0)
+- [Rig agent concepts](https://rig.rs/docs/concepts/agent)
+- [Rig AgentRunner concepts](https://rig.rs/docs/concepts/agentrunner)
+- [Rig `AgentRun` source](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/run/mod.rs)
+- [Rig post-release `rig-run` extraction](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-run/src/run.rs)
+- [Rig `AgentRunner` source](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/runner.rs)
+- [Rig hooks source](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/hook.rs)
+- [Rig evals-removal changelog](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-core/CHANGELOG.md#L481-L506)
 - [Rig interactive-agent roadmap](https://github.com/0xPlaygrounds/rig/issues/2118)
 - [Rig runner resume issue](https://github.com/0xPlaygrounds/rig/issues/2244)
 - [Grok skills, plugins, and marketplaces](https://docs.x.ai/build/features/skills-plugins-marketplaces)

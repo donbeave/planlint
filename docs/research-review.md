@@ -6,7 +6,8 @@ explicitly marked as verified here.
 
 ## 2026 source refresh
 
-The original conclusion still holds, with two material corrections:
+The original conclusion still holds, with these material corrections and
+additions:
 
 - Markdown plans are established practice, not the product’s unique insight.
   GitHub Spec Kit and OpenSpec both use repository Markdown artifacts and
@@ -18,7 +19,7 @@ The original conclusion still holds, with two material corrections:
   conclusions that require an outer ACP controller are superseded by the
   source-pinned trace in [Goal-execution research](goal-execution.md).
 - Rig is a lower-level Rust runtime, not a native `/goal` host. Its current
-  source supplies serializable run state, hooks, and experimental evals, while
+  source supplies serializable run state and hooks, while
   its roadmap leaves durable session/run control and workflow orchestration to
   the host.
 
@@ -60,13 +61,14 @@ The original conclusion still holds, with two material corrections:
   plan is not human-approved, verifier authority remains model-mediated, and no
   closed-world changed-path rule is mechanically enforced.
 - **Rig:** current official docs and source expose no native `/goal` command or
-  goal lifecycle. `rig-run::AgentRun` is a serializable sans-IO
+  goal lifecycle. `rig::AgentRun` is a serializable sans-IO
   `CallModel`/`CallTools`/`Done` state machine; `AgentRunner` and `AgentHook`
-  provide configured execution and per-run steering; experimental evals provide
-  `Pass`/`Fail`/`Invalid` input/output judgments. A durable goal controller,
-  plan approval, outer retry loop, repository verifier, and terminal receipt
-  remain host responsibilities. High-level runner resume is still an open
-  roadmap issue.
+  provide configured execution and per-run steering. An accepted tool-free
+  model turn ends a run; there is no built-in goal evaluator. A durable goal
+  controller, plan approval, outer retry loop, repository verifier, and
+  terminal receipt remain host responsibilities. High-level runner resume is
+  still an open roadmap issue. The official evals page is stale: v0.42.0
+  deleted the evals module and `experimental` feature.
 - **Claude Code context:** current goal documentation says the condition is
   restored on resume but turn/time/token baselines reset; `/goal` continues the
   same session rather than creating a fresh execution context. Background work
@@ -158,11 +160,11 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 30. [Grok Build goal state](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L422-L636)
 31. [Grok Build goal evaluator](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_evaluator.rs)
 32. [Grok Build verification stage](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_classifier.rs#L1870-L2217)
-33. [Rig](https://rig.rs/)
-34. [Rig architecture](https://docs.rig.rs/docs/architecture)
-35. [Rig agent concepts](https://docs.rig.rs/docs/concepts/agent)
-36. [Rig evals](https://docs.rig.rs/docs/concepts/evals)
-37. [Rig `AgentRun` source](https://github.com/0xPlaygrounds/rig/blob/2b271b66ca21b5baa230e42589ca00184f43af59/crates/rig-run/src/run.rs)
+33. [Rig v0.42.0](https://github.com/0xPlaygrounds/rig/releases/tag/v0.42.0)
+34. [Rig agent concepts](https://rig.rs/docs/concepts/agent)
+35. [Rig `AgentRun` source](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/run/mod.rs)
+36. [Rig hook source](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-agent/src/agent/hook.rs)
+37. [Rig evals-removal changelog](https://github.com/0xPlaygrounds/rig/blob/d5a34986a1ad57f1e9c5984b82f8d7438ffc717e/crates/rig-core/CHANGELOG.md#L481-L506)
 38. [Rig interactive-agent roadmap](https://github.com/0xPlaygrounds/rig/issues/2118)
 39. [Rig runner resume issue](https://github.com/0xPlaygrounds/rig/issues/2244)
 
