@@ -58,6 +58,25 @@ The original conclusion still holds, with two material corrections:
   tasks, typed evidence, strict command allowlists, compact handoffs, scope
   guards, and explicit verification. It uses JSON operational plans and is not
   the proposed canonical-Markdown Rust architecture.
+- **Codex source:** the public Rust repository confirms a native `Goal` slash
+  command, persisted thread goal API, goal tool, internal goal steering, idle
+  continuation, lifecycle statuses, and separate user/system controls for
+  pause/resume/budgets. The inspected goal path does not expose an independent
+  test/linter/compiler verifier or changed-path scope gate.
+- **OpenHands source:** the SDK includes a `run_goal` example that wraps a
+  normal conversation in an independent judge-LLM audit loop with a hard
+  iteration cap and `complete`/`capped` outcomes. It keeps work in the same
+  conversation history; the example does not provide a closed-world scope
+  guard or deterministic command runner.
+- **SWE-agent source:** `RetryAgent` bounds retries by cost/configuration,
+  saves trajectories, and hard-resets the environment between attempts.
+  `DefaultAgent` bounds corrective model re-queries after formatting,
+  blocked-action, policy, and shell-syntax failures.
+- **Deterministic harness sources:** Agent Execution Harness implements typed
+  run-state transitions, evidence/claim/rollback completion checks, and a
+  Git-based scope guard. `agent-spec` implements Markdown contract lifecycle
+  verification, explicit test binding, and non-passing `skip`/`uncertain`
+  semantics. Neither is itself a native `/goal` controller.
 - **Rust stack:** the proposed crates are plausible ecosystem choices. Exact
   versions must be selected and pinned during implementation, not inferred from
   this research archive.
@@ -102,6 +121,15 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 16. [agent-spec repository](https://github.com/ZhangHanDong/agent-spec)
 17. [Agent Execution Harness](https://github.com/lordaeternus/agent-execution-harness)
 18. [comrak documentation](https://docs.rs/comrak/latest/comrak/)
+19. [Codex slash dispatch](https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/slash_dispatch.rs)
+20. [Codex goal runtime](https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs)
+21. [Codex goal steering](https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/steering.rs)
+22. [OpenHands goal completion loop](https://github.com/OpenHands/software-agent-sdk/blob/main/examples/01_standalone_sdk/54_goal_completion_loop.py)
+23. [SWE-agent retry implementation](https://github.com/SWE-agent/SWE-agent/blob/main/sweagent/agent/agents.py)
+24. [Agent Execution Harness runner](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/runner.ts)
+25. [Agent Execution Harness finish checks](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/finish-check.ts)
+26. [Agent Execution Harness scope guard](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/scope-guard.ts)
+27. [agent-spec lifecycle source](https://github.com/ZhangHanDong/agent-spec/blob/main/src/spec_gateway/lifecycle.rs)
 
 ### Additional current sources
 
