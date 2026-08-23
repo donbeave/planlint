@@ -30,6 +30,8 @@ yet claim to implement the compiler.
 - [Research review](docs/research-review.md) — checked claims, corrections, and open verification items.
 - [Goal-execution research](docs/goal-execution.md) — source-level comparison of
   Codex, Claude Code, OpenHands, Rig, Cline, and Grok.
+- [Rig agent CLI adapters](docs/rig-agent-cli.md) — how to drive real coding-agent
+  CLIs, ACP agents, and HTTP sessions from a Rig host.
 
 ## License
 

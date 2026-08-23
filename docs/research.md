@@ -286,6 +286,12 @@ architecture, not native Rig behavior. The [interactive-agent roadmap](https://g
 explicitly keeps host control and durable session/run-control work separate;
 [runner resume](https://github.com/0xPlaygrounds/rig/issues/2244) remains open.
 
+For calling real coding-agent products from that host, see
+[Rig agent CLI adapters](rig-agent-cli.md). The adapter boundary is a child
+process, ACP JSON-RPC session, or HTTP client—not a Rig model provider. The
+controller must retain authority over the accepted contract, changed paths,
+deterministic proof, retry budget, and final `PASS`.
+
 ## Source-level implementation traces
 
 This section traces implementations that expose enough code or documentation

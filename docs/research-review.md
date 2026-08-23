@@ -69,6 +69,13 @@ additions:
   terminal receipt remain host responsibilities. High-level runner resume is
   still an open roadmap issue. The official evals page is stale: v0.42.0
   deleted the evals module and `experimental` feature.
+- **Real CLI integration:** Rig must use a host-owned process, ACP, or HTTP
+  adapter. Claude Code exposes non-interactive JSON/JSONL and resume; Codex
+  exposes `exec` JSONL plus an experimental bidirectional app-server; Grok,
+  OpenCode, and Kimi Code expose ACP subprocesses; OpenCode and Kimi also
+  expose local HTTP/WebSocket services. The adapter must handle cancellation,
+  permissions/callbacks, session IDs, and process cleanup; agent output is not
+  acceptance proof.
 - **Claude Code context:** current goal documentation says the condition is
   restored on resume but turn/time/token baselines reset; `/goal` continues the
   same session rather than creating a fresh execution context. Background work
@@ -176,6 +183,25 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 - [When and How Context Rot Appears in Coding Agents](https://arxiv.org/abs/2607.17937)
 - [GitHub Spec Kit](https://github.com/github/spec-kit)
 - [OpenSpec](https://github.com/Fission-AI/OpenSpec)
+
+### Current CLI and protocol sources
+
+- [Rig agent CLI adapter research](rig-agent-cli.md)
+- [Claude Code headless and scripting](https://code.claude.com/docs/en/headless)
+- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-usage)
+- [Claude Code sessions](https://code.claude.com/docs/en/sessions)
+- [Codex developer command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
+- [Codex app-server protocol](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md)
+- [Grok headless and scripting](https://docs.x.ai/build/cli/headless-scripting)
+- [Grok CLI reference](https://docs.x.ai/build/cli/reference)
+- [OpenCode CLI](https://dev.opencode.ai/docs/cli)
+- [OpenCode server API](https://dev.opencode.ai/docs/server/)
+- [OpenCode ACP](https://dev.opencode.ai/docs/acp)
+- [Kimi Code CLI reference](https://www.kimi.com/code/docs/en/kimi-code-cli/reference/kimi-command)
+- [Kimi Code IDE/ACP integration](https://www.kimi.ai/help/kimi-code/cli-ides)
+- [Kimi Code TypeScript repository](https://github.com/MoonshotAI/kimi-code)
+- [Agent Client Protocol overview](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/protocol/v1/overview.mdx)
+- [Agent Client Protocol Rust SDK](https://github.com/agentclientprotocol/rust-sdk)
 
 ## Bottom line
 
