@@ -12,20 +12,22 @@ marketing claims. Source-pinned open-source links identify the revision read.
 
 ## Bottom line
 
-`/goal` is primarily a **continuation policy**: it prevents an agent from
-giving control back after an ordinary turn. It is not, by itself, a planner,
-scope guard, or deterministic verifier.
+`/goal` is not one architecture. Claude Code implements a continuation hook;
+Codex implements durable goal state plus model-driven completion; OpenHands
+wraps a normal run with a judge; current Grok Build implements a multi-stage
+planner, worker, evaluator, and adversarial verifier harness.
 
-The strongest native architecture found is OpenHands SDK's explicit
-planner/executor-independent judge split: a controller drives the loop, and a
-second LLM judges evidence after every run. Codex has the strongest persistent
-goal state and completion-audit prompt. Claude Code has a fresh evaluator and
-well-defined operational failure behaviour. Cline and Grok demonstrate a
-separate, valuable pattern: human approval of a plan before editing.
+Grok is the strongest native architecture found. It automatically writes a
+structured plan, evaluates every worker round, and sends candidate completion
+to tool-using verifier subagents. Its verifier still consists of LLMs applying
+a model-written plan and evidence packet. It is materially stronger than a
+transcript-only judge, but it is not a deterministic command-level acceptance
+authority.
 
-None of these products makes command-level verification, changed-path scope,
-or requirement coverage authoritative by default. An external verifier remains
-necessary for predictable coding work.
+No surveyed product makes an immutable human-approved contract, closed-world
+changed-path policy, and deterministic requirement-to-proof mapping
+authoritative by default. An external verifier remains necessary for
+predictable coding work.
 
 ## Architecture comparison
 
@@ -35,10 +37,10 @@ necessary for predictable coding work.
 | Claude Code | A separate fast model evaluates after each turn and may start the next one. | Session-scoped prompt-based Stop hook. | Evaluator's transcript-only verdict. | Stops on `met`, `impossible`, no-progress safeguard, clear, or specified unrecoverable errors. | No native planning stage; permission mode is unchanged. |
 | OpenHands SDK | An outer driver re-runs a conversation after an independent judge says evidence is missing. | `GoalController` + `run_goal` driver + judge LLM. | Judge verdict over transcript evidence. | Explicit `max_iterations`, terminal `complete` or `capped`. | No planner in `run_goal`; it composes with any agent or critic. |
 | Cline | Plan mode is read-oriented; Act mode performs edits and commands after a manual toggle. | Persistent task/controller state with mode-specific prompts and models. | Agent's normal completion; no native goal evaluator located. | Task-resumption prompt asks agent to reassess and retry an interrupted step; no goal-level cap found. | Manual Plan-to-Act transition. |
-| Grok | Plan mode requires a reviewed plan before edit tools run; skills can expose custom slash commands. | Plan-mode guard, hooks, skills, and resumable sessions. | No documented native `/goal` evaluator or state machine. | No native goal loop found. | Plan preview requires human approval; edit guard has a shell-write caveat. |
+| Grok Build | Creates durable goal state, runs a hidden planner, then evaluates and continues worker rounds automatically. | Persisted state machine + plan file + worker + structured evaluator + adversarial verifier panel. | Verifier quorum; only an achieved aggregate transitions the goal to complete. | Optional token budget; evaluator blocker requires 3 identical rounds; default 10 verifier attempts; identical verifier gaps auto-pause after 2 occurrences. | Hidden goal plan is not human-approved. Normal permissions stay separate; `/plan` remains the explicit approval mode. |
 
-The last two rows are useful comparisons, not claims that Cline or Grok offer a
-native `/goal` equivalent.
+Cline is included as a planning/approval comparison, not as a claim that it
+offers a native `/goal` equivalent.
 
 ## Confirmed implementation traces
 
@@ -251,87 +253,180 @@ scope must be guarded elsewhere.
 extension/plugin can add a goal loop. It establishes only that the native Plan /
 Act flow is not one.
 
-### Grok CLI
+### Grok Build
 
-Current Grok documentation supplies usable components, but does not document a
-built-in `/goal` that persistently evaluates completion across turns.
+Grok Build's current open-source implementation is a native, durable,
+multi-stage goal harness. It is substantially different from Grok's ordinary
+prompt loop and from the separately documented `/plan` mode.
 
-Confirmed details:
+```text
+/goal <objective> [--budget <tokens>]
+  -> slash parser creates GoalSet
+  -> setup_goal creates and persists GoalOrchestration
+  -> hidden planner subagent writes goal/plan.md
+  -> normal worker turn executes with goal rules + plan pointer
+  -> hidden evaluator classifies round: continue | candidate_complete | blocked
+  -> continue: inject one synthetic next-step directive and run another turn
+     candidate_complete: capture diff/evidence and run verifier panel
+     blocked x3 with same key: pause for user action
+  -> verifier achieved: complete
+     verifier refuted: feed bounded gaps back and retry
+     same gaps / cap / contradiction / unverifiable / infra: pause
+```
 
-- [Skills](https://docs.x.ai/build/features/skills-plugins-marketplaces) are
-  Markdown instruction folders; user-invocable skills appear as
-  `/<skill-name>` slash commands. A custom `/project-goal` can therefore expose
-  a handoff convention, but is not automatically an execution loop.
-- [Plan mode](https://docs.x.ai/build/features/plan-mode) explores and drafts a
-  plan before edits. The review surface requires a human to approve, request
-  changes, comment, or quit; auto-approve does not skip it. The documented
-  caveat matters: Plan mode gates edit tools, not shell redirection.
-- [Hooks](https://docs.x.ai/build/features/hooks) provide lifecycle events.
-  `PreToolUse` is the only blocking event; `Stop` is passive, and stdout for
-  passive events is ignored. A Stop hook can record a verifier result but cannot
-  turn it into a continuation prompt.
-- [Headless sessions](https://docs.x.ai/build/cli/headless-scripting) support
-  `--session-id`, `--resume`, `--continue`, JSON output, and
-  `--always-approve`. Sessions are stored under `~/.grok/sessions`.
-- [Permissions](https://docs.x.ai/build/features/permissions) distinguish
-  permission approval from sandboxing; deny rules and `PreToolUse` hooks still
-  apply in always-approve mode.
+Confirmed source at revision
+[`07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8`](https://github.com/xai-org/grok-build/tree/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8):
 
-**Supported inference: portable Grok goal controller.** A project may combine
-a slash skill, a frozen plan contract, `grok -p` / `grok --resume`, and an
-external verifier. After every run, the controller, not a passive Stop hook,
-reads verifier state. It resumes only for a correctable, bounded failure and
-stops on `PASS`, `PLAN_GAP`, `STALE`, `BLOCKED`, or retry cap. This uses
-documented primitives; it is not native Grok behaviour.
+- [Slash parsing](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/slash_commands.rs#L309-L360)
+  recognizes `status`, `pause`, `resume`, `clear`, an objective, and an optional
+  positive trailing token budget. The canonical command instruction also tells
+  the worker to track steps, verify work, and reserve blocked status for a
+  repeated blocker: [shared command text](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-tools-api/src/slash_commands.rs#L209-L257).
+- [`GoalOrchestration`](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L422-L636)
+  stores objective, status, phase, token accounting, history, plan paths,
+  baseline commit, verifier attempts and gaps, strategist state, and verifier
+  session/model assignments. The state is persisted through
+  [`PersistenceMsg::GoalModeState`](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_orchestrator.rs#L29-L59).
+- [`setup_goal`](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/acp_session_impl/goal.rs#L799-L859)
+  captures token and Git baselines, creates state, runs the planner, and renders
+  the worker rules. The
+  [planner](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_planner.rs#L438-L543)
+  is a separate general-purpose subagent. It must write a non-empty plan file;
+  planner transport, runtime, or missing-file failure is fail-closed and pauses
+  the goal.
+- The [planner contract](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/templates/goal_planner_prompt.md)
+  selects `code-change`, `analysis`, or `research`; emits small outcome-based
+  acceptance criteria, a verification plan, scope/non-goals, and an ordered
+  checklist; and tells the planner not to modify the workspace outside its plan
+  file. The original plan is separately snapshotted so later weakening can be
+  shown to verifiers.
+- At worker turn end,
+  [`run_goal_round_end`](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/acp_session_impl/goal.rs#L1278-L1345)
+  invokes a tool-free structured evaluator. The
+  [evaluator](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_evaluator.rs#L1-L167)
+  receives the objective, plan, and at most 32 KiB of recent transcript; it
+  returns strict JSON with `continue`, `candidate_complete`, or `blocked` plus
+  evidence and one next step. Evaluation retries once; repeated failure pauses
+  the goal as an infrastructure failure.
+- Candidate completion enters the
+  [adversarial verification stage](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_classifier.rs#L1870-L2217).
+  It captures a baseline-to-current Git diff, complete changed-file list, plan
+  changes, final response, and captured evidence. It then runs up to five
+  tool-using skeptic subagents, three by default. Skeptic 0 is a persistent
+  reject-gatekeeper; cold skeptics run independently. Missing/malformed skeptic
+  evidence becomes a refuting vote. A high-confidence skeptic-0 refutation is
+  decisive; otherwise approval requires a strict majority of the cold panel.
+- The [verifier prompt](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/templates/goal_verifier_prompt.md)
+  tells skeptics to inspect current changed files and the implementer's tests
+  and captured outputs, perform cheap real-path checks, detect plan weakening
+  and test theater, and classify gaps as model-fixable, contradiction, or
+  unverifiable. Verifiers may read/search/run checks but must not edit the
+  workspace.
+- [Outcome application](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/acp_session_impl/goal.rs#L241-L339)
+  is harness-owned: achieved completes the goal; ordinary refutation stores
+  gaps and continues; every non-fixable refutation pauses; repeated identical
+  gaps pause early; and reaching the verifier-attempt cap pauses. The default
+  cap is ten, while the identical-gap stall threshold is two
+  ([classifier defaults](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_classifier.rs#L37-L116),
+  [stall state](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L33-L48)).
 
-**Unknown.** No official source examined states that Grok's internal agent loop
-has a durable objective record, separate goal evaluator, fixed retry policy,
-or direct native `/goal` syntax. Do not claim any of these without a source.
+**Goal representation and context.** One orchestration object is persisted with
+the session. Worker continuation stays in the same parent conversation; stale
+synthetic goal directives are pruned before the next is inserted. Planner and
+skeptics are child sessions. On process restore, an active goal is deliberately
+restored as user-paused rather than silently self-driving, and in-flight child
+state is cleared
+([restore logic](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L721-L790)).
+
+**Planning and approval.** Native goal planning is automatic and hidden; the
+goal plan is not shown for human approval. This is distinct from Grok's
+[interactive `/plan` mode](https://docs.x.ai/build/features/plan-mode), whose
+preview requires approval and whose edit gate is independent of permissions.
+The goal planner freezes an original baseline for later audit, but the current
+plan remains editable and verifier-enforced rather than mechanically immutable.
+
+**Execution, permissions, and scope.** The worker uses the normal session tool
+loop. The traced goal setup does not switch permission mode; Grok's documented
+[permission and sandbox controls](https://docs.x.ai/build/features/permissions)
+remain separate. The harness captures the real Git diff and full changed-file
+list and asks skeptics to reject fabricated or out-of-scope work. It does not
+apply a closed-world allowed-path policy before tools run, so scope acceptance
+is still model-mediated.
+
+**Retry and failure semantics.** A token budget can terminate as
+`BudgetLimited`. User actions provide status, pause, resume, and clear.
+Evaluator `blocked` must repeat with the same stable key three times before the
+goal pauses. Verifier refutations continue with bounded gap feedback; identical
+gaps, cap exhaustion, contradictions, unverifiable requirements, planner
+failure, evaluator failure, and verifier infrastructure failure pause rather
+than pass. Resume resets per-attempt stall/cap counters while preserving the
+objective and plan.
+
+**Completion and verification.** This is true independent evidence review, not
+just worker self-declaration: the worker/evaluator can only nominate a
+candidate, and the harness applies the panel outcome. However, the panel is
+still probabilistic. It audits files, tests, and captured outputs using agents;
+it does not compile an immutable contract into deterministic predicates or
+enforce an allowed-path set itself.
+
+**Unknown.** Source establishes the implementation at the pinned revision, not
+which feature flags, verifier models, or remote policy a particular installed
+binary receives. No inspected source establishes a cryptographically immutable
+plan, deterministic requirement-to-test binding, or transactional workspace
+rollback as part of native `/goal`.
 
 ## What source code actually establishes
 
-| Question | Codex | OpenHands | Claude Code | Cline | Grok |
-| --- | --- | --- | --- | --- |
-| Persistent goal state | Yes: SQL `thread_goals`. | Controller object during `run_goal`; conversation can persist separately. | Session condition; resume restores active goal. | Persistent task/mode, not goal. | No native goal state documented. |
-| Separate completion evaluator | No; worker marks terminal status under a strong prompt. | Yes: second judge LLM. | Yes: separate fast model. | No native goal evaluator located. | No native evaluator documented. |
-| Fresh isolated executor context | No; same thread. | No; same conversation events. | No; same session conversation. | No; same task/checkpoint context. | No native goal loop to assess. |
-| Independent command verifier | No. | No; judge reads transcript. | No; evaluator reads transcript. | No. | No. |
-| Built-in bounded goal retries | Budgets and terminal state, no inspected turn cap. | Yes: `max_iterations`. | Operational stop/clear rules; user may add turn/time clause. | Not applicable. | Not applicable. |
-| Native plan approval | No. | No. | No. | Yes. | Yes. |
+| Question | Codex | OpenHands | Claude Code | Cline | Grok Build |
+| --- | --- | --- | --- | --- | --- |
+| Persistent goal state | Yes: SQL `thread_goals`. | Controller object during `run_goal`; conversation can persist separately. | Session condition; resume restores active goal. | Persistent task/mode, not goal. | Yes: serialized `GoalOrchestration`; active restores paused. |
+| Separate completion evaluator | No; worker marks terminal status under a strong prompt. | Yes: second judge LLM. | Yes: separate fast model. | No native goal evaluator located. | Yes: structured tool-free evaluator, then tool-using skeptic panel. |
+| Fresh isolated executor context | No; same thread. | No; same conversation events. | No; same session conversation. | No; same task/checkpoint context. | Worker stays in parent conversation; planner and verifiers are child sessions. |
+| Independent command verifier | No. | No; judge reads transcript. | No; evaluator reads transcript. | No. | Partly: independent agents inspect files/evidence and may run cheap checks; no deterministic verifier. |
+| Built-in bounded goal retries | Budgets and terminal state, no inspected turn cap. | Yes: `max_iterations`. | Operational stop/clear rules; user may add turn/time clause. | Not applicable. | Yes: token budget, verifier cap, repeated-blocker and no-progress pauses. |
+| Native plan approval | No. | No. | No. | Yes. | `/goal`: no. Separate `/plan`: yes. |
 
 This matrix separates confirmed mechanisms from desired properties. In
 particular, "fresh evaluator" does not mean "independent verification" when it
-only reads a transcript.
+only reads a transcript. Grok's tool-using skeptic panel is stronger, but its
+verdict remains model-mediated.
 
 ## Strongest reusable practices
 
-1. **Separate continuation from completion.** Codex, Claude Code, and OpenHands
-   all re-enter after a normal worker run. That removes a common failure mode:
-   the worker deciding it is done before evidence exists.
+1. **Separate continuation from completion.** Codex, Claude Code, OpenHands,
+   and Grok all re-enter after a normal worker run. Grok goes further: a
+   tool-free evaluator nominates completion and a separate verifier panel owns
+   the terminal verdict.
 2. **Make non-success terminal.** OpenHands returns `capped`; Claude reports
    `impossible` and clears unrecoverable states; Codex has `blocked`, budget,
-   and usage states. A controller must never reinterpret a cap or blocker as
+   and usage states; Grok distinguishes user, backoff, no-progress,
+   infrastructure, blocked, and budget pauses. Never reinterpret one as
    success.
-3. **Use a fresh evaluator only as a backstop.** Claude and OpenHands demonstrate
-   an independent model judging worker output. Their own source proves its
-   limitation: both judge transcript evidence, not actual repository state.
-4. **Keep a human planning boundary.** Cline and Grok make review before edits
-   explicit. For a bounded change, freeze that approved plan before execution;
-   do not let later turns silently expand it.
-5. **Provide compact correction feedback.** OpenHands feeds the judge's
+3. **Use transcript evaluators only for routing.** Claude, OpenHands, and Grok's
+   first evaluator show the pattern. They can decide whether another worker
+   round or deeper verification is warranted; they cannot prove repository
+   state from a transcript.
+4. **Give the verifier real workspace access, but keep deterministic gates.**
+   Grok's skeptics inspect changed files, tests, and captured output, which is
+   stronger than transcript review. Their quorum is still probabilistic. Run
+   mechanical scope and proof predicates before any LLM judge.
+5. **Keep a human planning boundary.** Cline and Grok `/plan` make review before
+   edits explicit; Grok `/goal`'s hidden plan does not. Freeze one approved
+   contract before execution and reject later weakening or expansion.
+6. **Provide compact correction feedback.** OpenHands feeds the judge's
    `missing` field back to the worker. Codex reinjects completion and blocked
-   rules each continuation. An external verifier should likewise return only
-   failed gate, observed fact, required fact, and one correction target.
-6. **Bound automatic recovery.** OpenHands' hard cap is the cleanest native
-   example. Claude's no-progress stop is another guard. A portable controller
-   should cap correction attempts per gate, not continue indefinitely.
-7. **Treat scope as executable policy.** No surveyed native goal owns a
+   rules each continuation. Grok persists bounded verifier gaps and a single
+   evaluator next step. External diagnostics should be equally compact.
+7. **Bound automatic recovery.** OpenHands has a hard cap; Claude has a
+   no-progress safeguard; Grok combines token, verifier-attempt, repeated-gap,
+   and repeated-blocker limits. Cap correction attempts per gate.
+8. **Treat scope as executable policy.** No surveyed native goal owns a
    changed-path allowlist or requirement-to-proof graph. A verifier must compare
    `git diff` against the accepted plan and reject unlisted work rather than
    asking the agent to improvise a broader solution.
-8. **Use isolated contexts deliberately.** The surveyed native goal loops retain
-   their normal conversation context. Fresh executor sessions or worktrees are
-   an additional controller policy, not a property implied by `/goal`.
+9. **Use isolated contexts deliberately.** Worker loops retain their parent
+   conversation even when planner/verifier subagents are fresh. Clean executor
+   sessions or worktrees are an additional controller policy.
 
 ## Concrete operating model for predictable execution
 
@@ -358,15 +453,29 @@ commands, evidence hashes, and changed paths in a receipt.
 
 1. Plan and approve one bounded contract before `/goal`; do not place a backlog
    in the condition.
-2. Make the goal condition name exact final command(s), expected proof, allowed
-   paths, and a fixed turn/time cap. Claude's evaluator can only see what the
-   worker surfaces, so require final verifier output in the transcript.
-3. Install a project Stop hook that runs the external verifier. It should allow
-   completion only for `PASS`, provide compact diagnostics for one bounded
-   correction, and record terminal non-success rather than looping.
+2. For the native profile, make the condition require one exact verifier
+   command, its canonical `PASS <goal-id> <receipt-hash>` output, the allowed
+   path set, and a fixed turn/time cap. Claude's evaluator sees only transcript
+   evidence, so require the worker to surface that exact line. After Claude
+   returns, the outer process must independently read and validate the receipt.
+3. For the strict profile, use a deterministic command Stop hook *instead of*
+   native `/goal`. `/goal` is itself a prompt Stop hook; stacking two completion
+   controllers creates ordering ambiguity. The command hook runs the verifier,
+   blocks only for bounded correctable failures, and records terminal
+   `PLAN_GAP`, `STALE`, `BLOCKED`, or `FAIL` without another continuation.
 4. Use Auto mode only after reviewing plan and tool permissions. On cap,
-   impossible, or failed verifier, clear/replan rather than append unrelated
-   instructions to an old session.
+   impossible, or failed receipt, replan rather than append unrelated work to
+   the old session.
+
+Native payload shape:
+
+```text
+/goal Goal CCG-42 is met only when `planlint verify .agent/goals/CCG-42.md
+--receipt .agent/receipts/CCG-42.json` prints `PASS CCG-42 <receipt-sha>`;
+the receipt lists only the contract's allowed paths and every required gate is
+non-vacuously proven. Surface that exact line. Otherwise continue from the
+verifier diagnostic, or report impossible after 12 evaluated turns.
+```
 
 ### Codex
 
@@ -374,34 +483,55 @@ commands, evidence hashes, and changed paths in a receipt.
    `/goal` for its execution. The source shows goal accounting is not active for
    Plan-mode turns.
 2. Let native goals supply persistence, progress accounting, pause/resume, and
-   continuation. Do not treat `update_goal(complete)` as the acceptance
-   authority; it is a model-mediated terminal transition.
-3. Add a `Stop` hook that invokes the external verifier. On correctable failure,
-   return a compact continuation prompt; use `stop_hook_active` and a verifier
-   retry counter to prevent recursive continuation. On terminal non-success,
-   persist receipt and allow stop.
-4. Verify frozen inputs and changed paths before final `PASS`. If needed work
-   lies outside the contract, emit `PLAN_GAP`, not an autonomous redesign.
+   continuation. Require `update_goal(complete)` only after a deterministic
+   verifier has emitted and persisted `PASS`; the tool call remains a
+   model-mediated lifecycle transition, not acceptance authority.
+3. Do not stack native goal continuation and an independent Stop-hook loop
+   unless their state machines are explicitly coordinated. If a Stop hook is
+   the strict controller, use it as the goal equivalent: bound retries with
+   `stop_hook_active`, persist terminal non-success, and do not rely on native
+   goal status.
+4. The outer process revalidates frozen inputs, receipt hash, and changed paths
+   before final `PASS`. Needed work outside the contract produces `PLAN_GAP`,
+   never an autonomous redesign.
+
+Native payload shape:
+
+```text
+/goal Execute exactly .agent/goals/CX-42.md at the recorded SHA-256. Keep this
+goal active until `planlint verify .agent/goals/CX-42.md --receipt
+.agent/receipts/CX-42.json` returns `PASS CX-42 <receipt-sha>`. Apply only the
+verifier's bounded diagnostics. Call update_goal complete only after PASS; call
+it blocked only under the native repeated-blocker rule.
+```
 
 ### Grok
 
-1. Use native Plan mode for review, but save the approved plan as a frozen
-   repository artifact. Treat its shell-redirection caveat as a reason to add
-   external diff and sandbox checks.
-2. Implement a project skill for the small execution handoff only. Do not call
-   that skill a native `/goal`.
-3. Use an outer controller: create/resume one headless session, run verifier
-   after every run, resume only after a correctable diagnostic, and stop on a
-   terminal receipt. A `Stop` hook may log the receipt; it cannot continue work.
-4. Use `PreToolUse` deny hooks and permission/sandbox policy for preventive
-   safety, while verifier enforces scope and completion after execution.
+1. Produce and human-approve one contract first, then invoke native `/goal`
+   with an objective that names that exact file and hash. Grok's hidden planner
+   is useful decomposition, but it is not the approval boundary.
+2. Let native goal mode own persistence, worker continuation, evaluator
+   routing, skeptic retries, pause/resume, and token accounting. Do not rebuild
+   those layers with a slash skill or passive Stop hook.
+3. Put the deterministic verifier command and expected structured receipt in
+   the approved contract's gating verification plan. Require the worker to save
+   its output; Grok's skeptics are designed to audit those files.
+4. Add a preventive `PreToolUse`/sandbox path policy and a final mechanical
+   diff check. Native verification sees the complete changed-file list but does
+   not itself enforce a closed-world allowlist.
+5. Use explicit token and verifier-attempt bounds. Treat no-progress,
+   infrastructure, contradiction, unverifiable, and budget states as terminal
+   review points; resume only after the recorded cause changes. Prefer a
+   dedicated worktree for every goal.
 
 ## Research limits
 
-- Closed-source Claude Code and Grok conclusions are limited to current official
+- Closed-source Claude Code conclusions are limited to current official
   documentation and reproducible documented behaviour, not internal source.
 - Open-source links are pinned revisions read on 2026-08-23. They may differ
   from later released binaries.
-- No claim here says an LLM evaluator proves repository state. Where the source
-  shows transcript-only judgment, that limitation is intentional and central to
-  the recommendations.
+- Grok Build source is public, but installed binaries can differ by release,
+  feature flag, remote policy, and configured verifier models.
+- No claim here says an LLM evaluator or verifier quorum proves repository
+  state. Transcript-only judgment is weakest; tool-using model verification is
+  stronger; deterministic predicates remain the acceptance authority.

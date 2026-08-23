@@ -220,38 +220,29 @@ maintainer discussion reports that `exec` treats it as ordinary text.
 
 ### Grok
 
-Current Grok documentation supports Markdown skills exposed as slash commands,
-lifecycle hooks, and compatibility with Claude Code skills, plugins, hooks, and
-instruction files. No documented built-in Grok `/goal` equivalent was found in
-the checked documentation. Grok documents `Stop` as a passive event whose
-stdout is ignored; only `PreToolUse` can block. A Stop hook may record a verdict
-but cannot continue the agent loop.
+Current Grok Build ships a native `/goal` and publishes its Rust source. The
+command creates durable `GoalOrchestration`, captures token and Git baselines,
+runs a hidden planner subagent, executes ordinary worker turns, evaluates each
+turn with a strict tool-free classifier, and sends candidate completion to an
+adversarial panel of tool-using skeptic subagents. Achieved quorum completes;
+ordinary gaps are fed back; repeated gaps, repeated blockers, verifier caps,
+budgets, contradictions, unverifiable requirements, and infrastructure errors
+pause rather than pass. See the source-pinned trace in
+[Goal-execution research](goal-execution.md#grok-build).
 
-The adapter should expose a user-invocable `/tailrocks-goal`, or `/goal` where
-that name is unreserved. Automatic persistence needs an outer Rust controller:
-start a headless session with `grok -p`, resume it with `--resume` after a
-correctable verifier failure, or drive the same loop through ACP. The controller
-stops on `PLAN PASS` or a terminal `PLAN_GAP`, `BLOCKED`, `STALE`, or `FAIL`.
+**Planning and approval:** native goal planning produces a structured
+acceptance/verification plan and snapshots its original form for later
+anti-weakening review, but the plan is hidden and not human-approved. Grok’s
+separate documented `/plan` mode provides the plan preview and explicit
+approval surface. A predictable adapter should therefore approve and freeze a
+contract first, then point native `/goal` at that exact artifact and hash.
 
-The core remains host-neutral. Claude, Codex, and Grok adapters translate the
-same verifier verdict into each host’s continuation protocol, but Grok cannot
-reuse the Claude/Codex Stop-hook continuation mechanism.
-
-**Planning and approval:** Grok’s documented `/plan` mode explores the codebase,
-writes a plan preview, and requires explicit approval or requested changes
-before normal edit tools proceed. This is a real planner/approval surface, but
-it is separate from any `/goal` abstraction. Plan mode gates edit tools, not
-shell redirection, so the controller must also enforce command policy and
-scope. Permission modes (`Ask`, `Auto`, and `Always-approve`) remain separate
-from plan approval.
-
-**Execution and verification:** implement `/goal` as a skill only for the user
-interface. Store the accepted plan and run state outside the model, start Grok
-with `-p --session-id` or ACP, and let the controller issue a new prompt on
-`--resume`/ACP when deterministic verification fails. Use `PreToolUse` to deny
-undeclared paths or dangerous commands; use `Stop` for logging and receipts
-only, because its output cannot continue the loop. Require an external
-`PASS`, `PLAN_GAP`, `BLOCKED`, `STALE`, or `FAIL` state before ending the run.
+**Execution and verification:** native continuation, retry, pause/resume, and
+model-verifier orchestration should be reused. The project controller still
+owns deterministic `PASS`: run exact proof predicates, enforce a closed-world
+changed-path set, and store a receipt. Native skeptics inspect the real diff,
+changed files, tests, and captured outputs, but their quorum is probabilistic
+and the harness does not mechanically deny undeclared paths.
 
 ## Source-level implementation traces
 
@@ -271,7 +262,7 @@ product does not expose enough implementation detail to verify the claim.
 | SWE-agent | Issue/problem statement plus agent/retry configuration | Tool/action loop, optionally wrapped by retry loop | Environment/task submission and configured retry reviewer | Cost limit; retry attempts hard-reset the environment; formatting/action retries are bounded |
 | Agent Execution Harness | JSON operational plan and run artifact | Explicit action state machine | `finish --check` requires claims, evidence, tasks, rollback, and scope | Declared files, command policy, evidence policy, dependency waves; isolation metadata is advisory |
 | agent-spec | Markdown Task Contract | Contract compiler plus lifecycle verifier | Mechanical lint, bound tests, and explicit non-`skip`/non-`uncertain` verdict | Allowed/forbidden paths and change-set checks; caller AI verifier is secondary and inspectable |
-| Grok | No documented native goal object; skills/slash commands and sessions | Model session, hooks, headless/ACP controller, or external loop | No documented goal evaluator or goal state machine | `PreToolUse` can deny; `Stop` is passive; outer controller must own retry and completion |
+| Grok Build | Persisted `GoalOrchestration`, plan/baseline files, token and verifier state | Hidden planner → worker rounds → structured evaluator → adversarial skeptic panel | Harness applies verifier quorum; deterministic project verifier remains external | Built-in caps and pause states; real diff evidence; no mechanical closed-world path guard; worker remains in parent context |
 
 ### Codex: native persistent goal state machine
 
@@ -469,7 +460,7 @@ treated as automatic PASS. This is a contract compiler/verifier, not a
 persistent goal controller. Its documented acceptance surface separates human
 review of the contract from machine review of verification results.
 
-### Closed-source boundary: Claude Code and Grok
+### Closed-source boundary: Claude Code
 
 **Confirmed.** Claude Code documents `/goal` as a per-session continuation
 condition with a small evaluator after each turn. The evaluator receives the
@@ -478,22 +469,17 @@ commands, and has bounded conditions/turn behavior. Its deterministic Stop
 hook is a separate control path. See the [goal documentation](https://code.claude.com/docs/en/goal)
 and [hooks documentation](https://code.claude.com/docs/en/hooks).
 
-**Confirmed.** Grok documents skills/slash commands, sessions, headless
-`--resume`/`--continue`, ACP, subagents, and hooks. Its hook docs define
-`PreToolUse` as the only blocking event; `Stop` is passive and its stdout is
-ignored. See [skills/plugins](https://docs.x.ai/build/features/skills-plugins-marketplaces),
-[hooks](https://docs.x.ai/build/features/hooks), and
-[headless scripting](https://docs.x.ai/build/cli/headless-scripting).
-
 **Supported inference.** Claude can host a deterministic verifier through Stop
-hooks, while Grok needs a headless/ACP outer controller for the same behavior.
-Both can expose a Markdown `/goal` skill, but that skill is only a prompt
-wrapper unless the host or external controller owns persistent state,
-continuation, evidence, and terminal status.
+hooks, but its native goal evaluator remains a continuation authority rather
+than a repository-state authority.
 
-**Unknown.** Neither closed product exposes its internal goal/evaluator state
-machine, planner decomposition, model-facing goal prompt, retry persistence,
-or changed-path enforcement. Claims about those internals would be speculation.
+**Unknown.** Claude Code does not expose its source-level goal state machine,
+planner decomposition, model-facing evaluator prompt, retry persistence, or
+changed-path enforcement. Claims about those internals would be speculation.
+
+Grok Build is no longer part of this closed-source boundary. Its public
+source-level trace is maintained in
+[Goal-execution research](goal-execution.md#grok-build).
 
 ## Closest existing work
 
@@ -1483,15 +1469,15 @@ limits, and terminal status.
 
 **Grok**
 
-- Use `/plan` for the documented plan preview and human approval, then expose a
-  `/goal` skill that creates an external run record. The skill itself must not
-  pretend to provide persistence.
-- Drive execution through headless sessions or ACP. After each completed
-  response, run the verifier outside Grok; resume only when the result is a
-  bounded corrective diagnostic. Use `PreToolUse` to deny scope violations and
-  dangerous commands; never depend on `Stop` stdout for continuation.
-- Prefer a worktree/sandbox per run, retain the plan fingerprint and evidence
-  receipts outside the session, and stop on the first terminal verifier state.
+- Human-approve and freeze one contract first, then invoke native `/goal` with
+  the exact artifact path and hash. Treat the hidden goal plan as derived
+  execution state, not the approval authority.
+- Reuse native planner/worker/evaluator/skeptic orchestration, token accounting,
+  pause/resume, and retry bounds. Require the accepted plan's deterministic
+  verifier command and receipt as a gating step that native skeptics can audit.
+- Enforce allowed paths preventively with permissions/hooks/sandbox and again
+  mechanically from the final diff. Prefer a worktree per run. Treat every
+  pause state as terminal review; resume only after its recorded cause changes.
 
 ## Source links
 
@@ -1510,6 +1496,9 @@ limits, and terminal status.
 - [Grok headless and scripting](https://docs.x.ai/build/cli/headless-scripting)
 - [Grok plan mode](https://docs.x.ai/build/features/plan-mode)
 - [Grok permissions](https://docs.x.ai/build/features/permissions)
+- [Grok Build goal state](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L422-L636)
+- [Grok Build goal evaluator](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_evaluator.rs)
+- [Grok Build verifier panel](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_classifier.rs#L1870-L2217)
 - [Grok 4.6](https://docs.x.ai/developers/grok-4-6)
 - [OpenAI model catalog](https://developers.openai.com/api/docs/models)
 - [The Working Set of a Coding Agent](https://arxiv.org/abs/2608.16630)

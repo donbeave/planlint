@@ -14,6 +14,9 @@ The original conclusion still holds, with two material corrections:
 - Codex now documents native `/goal` and a project-local `Stop` hook. The
   initial integration can use either; it must follow the current Codex hook
   wire format instead of assuming Claude’s format.
+- Grok Build now ships and publishes source for a native `/goal` harness. Older
+  conclusions that require an outer ACP controller are superseded by the
+  source-pinned trace in [Goal-execution research](goal-execution.md).
 
 ## Confirmed claims
 
@@ -44,12 +47,14 @@ The original conclusion still holds, with two material corrections:
   "..." }` to continue with the reason as a new continuation prompt, and it
   provides `stop_hook_active` for loop control. The Codex wire format is
   host-specific and must not be copied from Claude.
-- **Grok:** current documentation supports Markdown skills exposed as slash
-  commands, lifecycle hooks, Claude Code compatibility, headless sessions, and
-  ACP. It does not document a built-in `/goal` equivalent. Its `Stop` event is
-  passive, so automatic continuation requires an outer headless/ACP controller.
-  Its separate `/plan` mode provides a plan preview and explicit approval
-  surface, while permission modes and hooks remain separate controls.
+- **Grok Build:** current documentation and public source now expose native
+  `/goal`. The inspected implementation persists `GoalOrchestration`, creates a
+  hidden structured plan, evaluates each worker round, and sends candidate
+  completion to an adversarial tool-using skeptic panel. It bounds verifier
+  attempts and repeated-gap/blocker loops and pauses on infrastructure,
+  contradiction, unverifiable, no-progress, and budget outcomes. The native
+  plan is not human-approved, verifier authority remains model-mediated, and no
+  closed-world changed-path rule is mechanically enforced.
 - **Claude Code context:** current goal documentation says the condition is
   restored on resume but turn/time/token baselines reset; `/goal` continues the
   same session rather than creating a fresh execution context. Background work
@@ -138,6 +143,9 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 27. [Agent Execution Harness finish checks](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/finish-check.ts)
 28. [Agent Execution Harness scope guard](https://github.com/lordaeternus/agent-execution-harness/blob/main/src/core/scope-guard.ts)
 29. [agent-spec lifecycle source](https://github.com/ZhangHanDong/agent-spec/blob/main/src/spec_gateway/lifecycle.rs)
+30. [Grok Build goal state](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_tracker.rs#L422-L636)
+31. [Grok Build goal evaluator](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_evaluator.rs)
+32. [Grok Build verification stage](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/goal_classifier.rs#L1870-L2217)
 
 ### Additional current sources
 
@@ -153,5 +161,6 @@ workflow that `planlint` should compile and enforce, not as an external fact.
 The concept is credible. The strongest defensible claim is not that a fixed
 context size makes agents smart, nor that Markdown planning is new. It is that
 explicit, bounded Markdown plan contracts plus deterministic, non-vacuous
-evidence can make acceptance more reliable than transcript-only completion
-judgments, while remaining portable across host agents.
+evidence can make acceptance more reliable than transcript-only evaluators or
+tool-using LLM verifier quorums alone, while remaining portable across host
+agents.
