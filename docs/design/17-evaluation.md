@@ -84,3 +84,20 @@ PLAN_GAP
 That distinction prevents the agent from turning every plan defect into an
 improvised implementation decision.
 
+### Planning-quality corpus
+
+The SWE-RPG benchmark adds cases before the implementation loop, not only
+after it. Include tasks where the visible request hides a compatibility
+boundary, the location is known but the mechanism is underspecified, or the
+new behavior can pass while a regression is introduced. These cases test the
+three separate failure boundaries: requirement recovery, plan quality, and
+code execution.
+
+For each case, record whether `planlint check` identifies the missing detail,
+whether `PLAN_GAP` stops unlisted necessary work, and whether `planlint verify`
+rejects a false pass. The external benchmark reports 31.5% average resolution
+across 163 tasks in 31 repositories; that number is context for the problem,
+not a directly comparable `planlint` baseline.
+
+The detailed evidence and limits are recorded in [SWE-RPG planning
+implications](../research/review/06-swe-rpg-planning-implications.md).

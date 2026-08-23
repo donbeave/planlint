@@ -40,6 +40,23 @@ anything.
 | `PL070` | Command uses undeclared shell interpolation, network, environment, or working directory |
 | `PL080` | Placeholder, unresolved decision, `TBD`, or ambiguous implementation choice |
 
+The semantic completeness checks are grounded in the SWE-RPG planning
+findings. A syntactically valid plan is still deficient when its steps omit
+the implementation approach, leave a requirement without proof, or declare a
+compatibility boundary without a regression check. These should produce
+field-specific diagnostics rather than a generic “insufficient detail” error.
+
+```text
+error[PL081]: step has no implementation approach
+error[PL082]: requirement REQ-3 has no acceptance proof
+error[PL083]: compatibility boundary has no regression verification
+```
+
+The checks are semantic projections of the existing contract fields:
+`Outcome` supplies the goal, `Inputs` and scope supply location, step prose
+supplies approach, `Must not` supplies constraints, and `Verify`/`Acceptance`
+supplies validation. They do not require one particular prose template.
+
 `PL080` may be a warning for ordinary prose ambiguity. It must be an error
 when ambiguity would require the executor to choose architecture, scope, or
 acceptance semantics.
@@ -73,3 +90,8 @@ planlint verify  # verify an implementation against the frozen plan
 
 Merely linting a Markdown file must never execute commands from it.
 
+The simplest user-facing workflow still has two distinct responsibilities:
+`check` establishes plan readiness, while `verify` establishes implementation
+correctness. `probe` may run preconditions before acceptance, but it cannot
+turn either a syntactically valid plan or a zero-work command exit into
+completion proof.

@@ -16,6 +16,8 @@ is confirmed, what is qualified, and what remains unknown. The research cut is
   context profile and Tailrocks assumptions.
 - [Sources checked](review/04-sources-checked.md) — primary bibliography.
 - [Review bottom line](review/05-bottom-line.md) — what the evidence supports.
+- [SWE-RPG planning implications](review/06-swe-rpg-planning-implications.md) —
+  implicit requirements, plan completeness, `PLAN_GAP`, and evaluation cases.
 
 ## Goal-execution study
 

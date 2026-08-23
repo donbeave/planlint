@@ -10,3 +10,4 @@ confirmed findings from useful but unproven assumptions.
 3. [Claims kept qualified](03-qualified-claims.md)
 4. [Sources checked](04-sources-checked.md)
 5. [Bottom line](05-bottom-line.md)
+6. [SWE-RPG planning implications](06-swe-rpg-planning-implications.md)

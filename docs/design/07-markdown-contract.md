@@ -124,3 +124,26 @@ Add the exhausted-budget case to the existing retry integration test.
 Meaning must come from headings, identifiers, and fields—not an LLM
 interpreting arbitrary prose.
 
+## Research-derived completeness rule
+
+The SWE-RPG evidence adds a semantic requirement to this syntax. Each
+implementation step must make five answers recoverable without executor
+guessing:
+
+| Answer | Contract field |
+| --- | --- |
+| What becomes true? | `Outcome` and covered requirements |
+| Where does it change? | `Inputs`, `May change`, and step location |
+| How does it change? | step implementation approach |
+| What remains unchanged? | `Must not` and compatibility requirements |
+| How is it proven? | `Verify`, `Acceptance`, and evidence predicates |
+
+The headings need not reproduce this table, but every answer must be present.
+A step that says “update as needed” without naming the mechanism is not
+complete. A new-behavior check without a declared regression obligation is
+not sufficient when the plan crosses a compatibility boundary. Missing
+details are compiler diagnostics; work outside the accepted scope is
+`PLAN_GAP`.
+
+See [SWE-RPG planning implications](../research/review/06-swe-rpg-planning-implications.md)
+for the evidence and the TSV/CSV boundary example.
