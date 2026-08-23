@@ -297,6 +297,12 @@ Confirmed source at revision
   is a separate general-purpose subagent. It must write a non-empty plan file;
   planner transport, runtime, or missing-file failure is fail-closed and pauses
   the goal.
+- The model-facing
+  [`update_goal`](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-tools/src/implementations/grok_build/update_goal/mod.rs#L1-L79)
+  accepts a progress message, `completed`, or `blocked_reason` and waits for a
+  verdict-aware actor acknowledgement. A mid-turn completion claim is
+  [deferred to turn end](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/acp_session_impl/goal.rs#L1549-L1781),
+  so it nominates verification rather than bypassing it.
 - The [planner contract](https://github.com/xai-org/grok-build/blob/07b2f7144fd5c5c9d3dd1966937a87852d2dbdb8/crates/codegen/xai-grok-shell/src/session/templates/goal_planner_prompt.md)
   selects `code-change`, `analysis`, or `research`; emits small outcome-based
   acceptance criteria, a verification plan, scope/non-goals, and an ordered
